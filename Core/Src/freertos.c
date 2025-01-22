@@ -1,0 +1,341 @@
+/* USER CODE BEGIN Header */
+/**
+ ******************************************************************************
+ * File Name          : freertos.c
+ * Description        : Code for freertos applications
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2024 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "FreeRTOS.h"
+#include "task.h"
+#include "main.h"
+#include "cmsis_os.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "stdint.h"
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include "mavlink_parse.h"
+#include "usart_debug.h"
+#include "track_queue.h"
+#include "cJSON.h"
+#include "usart_4gmoudle.h"
+#include "mavlink_parse.h"
+#include "track_json.h"
+#include "rtcm_parse.h"
+/* FatFs includes component */
+#include "ff.h"
+#include "ff_gen_drv.h"
+#include "sd_diskio.h"
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+LinkedList pTrackList;
+TrackInfo pTrackInfo;
+
+extern bool taskflag;
+extern bool SendTaskStateFlag;
+extern bool attitude_ready;
+extern bool gps_ready;
+extern bool jobid_ready;
+extern bool tag_flag;
+extern bool RecieveFinishFlag;
+extern bool distance_flag;
+
+extern double fdistance;
+extern uint64_t timestamp;
+extern uint8_t client; // 0：地面站
+extern uint32_t jobId;
+extern uint32_t trackNum; // 上传序号，发送一次轨迹序号加一
+extern uint32_t duration; // 持续时间
+extern uint32_t id;
+
+extern uint32_t ucRxCnt;
+extern uint8_t RxBuffer[1500];
+extern char token[10];
+extern char sn[20];
+extern char cv[10];    // 固件版本
+extern char fv[10];    // 飞控版本
+extern char flynum[6]; // 起降次数
+
+extern char SDPath[4];     /* SD逻辑驱动器路径 */
+extern FATFS fs;           /* FatFs文件系统对象 */
+extern FIL fnew;           /* 文件对象 */
+extern FRESULT res_sd;     /* 文件操作结果 */
+extern UINT fnum;          /* 文件成功读写数量 */
+extern BYTE WriteBuffer[]; /* 写缓冲区*/
+extern FATFS flash_fs;
+extern Diskio_drvTypeDef SD_Driver;
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN Variables */
+
+/* USER CODE END Variables */
+osThreadId TrackRecodeTaskHandle;
+osThreadId TrackSendTaskHandle;
+osThreadId MavlinkParseTaskHandle;
+osThreadId JsonParseTaskHandle;
+
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN FunctionPrototypes */
+uint32_t getSysTickCnt(void)
+{
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) // FreeRTOS 是否已经启动
+        return xTaskGetTickCount();
+    else
+        return 0;
+}
+uint64_t getTaskExecutionCnt(void)
+{
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED && timestamp != 0) // FreeRTOS 是否已经启动并且已经从云网获得时间戳
+        return (uint64_t)xTaskGetTickCount() + timestamp;
+    else
+        return timestamp;
+}
+/* USER CODE END FunctionPrototypes */
+
+void StartTrackRecodeTask(void const *argument);
+void StartTrackSendTask(void const *argument);
+void StartMavlinkParseTask(void const *argument);
+void StartJsonParseTask(void const *argument);
+
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+
+/* GetIdleTaskMemory prototype (linked to static allocation support) */
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize);
+
+/* USER CODE BEGIN GET_IDLE_TASK_MEMORY */
+static StaticTask_t xIdleTaskTCBBuffer;
+static StackType_t xIdleStack[configMINIMAL_STACK_SIZE];
+
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize)
+{
+    *ppxIdleTaskTCBBuffer = &xIdleTaskTCBBuffer;
+    *ppxIdleTaskStackBuffer = &xIdleStack[0];
+    *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+    /* place for user code */
+}
+/* USER CODE END GET_IDLE_TASK_MEMORY */
+
+/**
+ * @brief  FreeRTOS initialization
+ * @param  None
+ * @retval None
+ */
+void MX_FREERTOS_Init(void)
+{
+    /* USER CODE BEGIN Init */
+
+    /* USER CODE END Init */
+
+    /* USER CODE BEGIN RTOS_MUTEX */
+    /* add mutexes, ... */
+    /* USER CODE END RTOS_MUTEX */
+
+    /* USER CODE BEGIN RTOS_SEMAPHORES */
+    /* add semaphores, ... */
+    /* USER CODE END RTOS_SEMAPHORES */
+
+    /* USER CODE BEGIN RTOS_TIMERS */
+    /* start timers, add new ones, ... */
+    /* USER CODE END RTOS_TIMERS */
+
+    /* USER CODE BEGIN RTOS_QUEUES */
+    /* add queues, ... */
+    /* USER CODE END RTOS_QUEUES */
+
+    /* Create the thread(s) */
+    /* definition and creation of TrackRecodeTask */
+    osThreadDef(TrackRecodeTask, StartTrackRecodeTask, osPriorityNormal, 0, 2048);
+    TrackRecodeTaskHandle = osThreadCreate(osThread(TrackRecodeTask), NULL);
+
+    /* definition and creation of TrackSendTask */
+    osThreadDef(TrackSendTask, StartTrackSendTask, osPriorityNormal, 0, 2048);
+    TrackSendTaskHandle = osThreadCreate(osThread(TrackSendTask), NULL);
+
+    /* definition and creation of MavlinkParseTask */
+    osThreadDef(MavlinkParseTask, StartMavlinkParseTask, osPriorityNormal, 0, 2048);
+    MavlinkParseTaskHandle = osThreadCreate(osThread(MavlinkParseTask), NULL);
+
+    /* USER CODE BEGIN RTOS_THREADS */
+    /* add threads, ... */
+    osThreadDef(JsonParseTask, StartJsonParseTask, osPriorityNormal, 0, 4096);
+    JsonParseTaskHandle = osThreadCreate(osThread(JsonParseTask), NULL);
+    /* USER CODE END RTOS_THREADS */
+}
+
+/* USER CODE BEGIN Header_StartTrackRecodeTask */
+/**
+ * @brief  Function implementing the TrackRecodeTask thread.
+ * @param  argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartTrackRecodeTask */
+void StartTrackRecodeTask(void const *argument)
+{
+
+    uint32_t lastWakeTime = getSysTickCnt();
+
+    while (1)
+    {
+        malvlink_heart_send();
+        if (taskflag == true)
+        {
+            if (gps_ready && attitude_ready && jobid_ready)
+            {
+                gps_ready = false;
+                attitude_ready = false;
+                distance_flag = true;
+                insertDataAtEnd(&pTrackList, pTrackInfo);
+            }
+        }
+        vTaskDelayUntil(&lastWakeTime, F2T(RATE_1_HZ));
+    }
+    /* USER CODE END StartTrackRecodeTask */
+}
+
+/* USER CODE BEGIN Header_StartTrackSendTask */
+/**
+ * @brief Function implementing the TrackSendTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+
+/* USER CODE END Header_StartTrackSendTask */
+void StartTrackSendTask(void const *argument)
+{
+    /* USER CODE BEGIN StartTrackSendTask */
+    /* Infinite loop */
+    while ((id == 0 || timestamp == 0)) // 获取飞控ID和云网时间戳
+    {
+        printf("send ready task\r\n");
+        readyTask(); // 发送准备作业
+        osDelay(5000);
+    }
+    printf("id is %d  timestamp is %lld\r\n", id, timestamp);
+
+    while (1)
+    {
+        if (!jobid_ready && taskflag == true) // 向云网发送任务开始
+        {
+            taskAction();
+        }
+        if (taskflag == true && jobid_ready == true) // 等待jobid和时间戳
+        {
+            printf("queue size is %d\r\n", getLinkedListLength(&pTrackList));
+            if (getLinkedListLength(&pTrackList) >= 5)
+            {
+                uploadTrack();
+            }
+        }
+
+        if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) >= 5) //
+        {
+            printf("send heap track\r\n");
+            uploadTrack();
+        }
+        else if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) < 5)
+        {
+            printf("send task finish\r\n");
+            SendTaskStateFlag = false;
+            finishTask();
+            osDelay(2000);
+            finishTask();
+            osDelay(2000);
+            fdistance = 0;
+            trackNum = 0;
+            jobId = 0;
+            jobid_ready = 0;
+            destroyLinkedList(&pTrackList);
+        }
+        osDelay(1000);
+    }
+    /* USER CODE END StarttrackSendTask */
+}
+
+/* USER CODE BEGIN Header_StartMavlinkParseTask */
+/**
+ * @brief Function implementing the MavlinkParseTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartMavlinkParseTask */
+void StartMavlinkParseTask(void const *argument)
+{
+    /* USER CODE BEGIN StartMavlinkParseTask */
+    /* Infinite loop */
+    uint32_t lastWakeTime = getSysTickCnt();
+    while (1)
+    {
+        update();
+        vTaskDelayUntil(&lastWakeTime, F2T(RATE_200_HZ));
+    }
+    /* USER CODE END StartMavlinkParseTask */
+}
+
+void StartJsonParseTask(void const *argument)
+{
+    /* USER CODE BEGIN StartJsonParseTask */
+    /* Infinite loop */
+    cJSON *cjson_clode = NULL;
+    // char *JsonStr = NULL;
+    uint32_t lastWakeTime = getSysTickCnt();
+    while (1)
+    {
+        if (RecieveFinishFlag == true)
+        {
+            RecieveFinishFlag = false;
+            if (RxBuffer[0] == 0x31 && RxBuffer[1] == 0x2C)
+            {
+                cjson_clode = cJSON_Parse((const char *)&RxBuffer[2]);
+
+                if (cjson_clode != NULL)
+                {
+                    json_prarse(cjson_clode);
+                    cJSON_Delete(cjson_clode);
+                }
+                else
+                {
+                    printf("cJSON_Parse failed\r\n");
+                }
+            }
+            else if (RxBuffer[0] == 0x32 && RxBuffer[1] == 0x2C)
+            {
+                process_rtcm_data(&RxBuffer[2], ucRxCnt - 2);
+            }
+            ucRxCnt = 0;
+            memset(RxBuffer, 0, sizeof(RxBuffer));
+        }
+        vTaskDelayUntil(&lastWakeTime, F2T(RATE_100_HZ));
+    }
+    /* USER CODE END StartMavlinkParseTask */
+}
+/* Private application code --------------------------------------------------*/
+/* USER CODE BEGIN Application */
+
+/* USER CODE END Application */
