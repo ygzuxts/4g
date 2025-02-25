@@ -18,8 +18,7 @@ Project have four tasks as listed below:
 
 ## Note
 - 使用时，重新配置4G模块到正常首发数据经测试需要30S时间。
-- 需要配置飞控的mavlink参数
-- 需要配置飞控mavlink的波特率
+- 需要配置飞控的mavlink参数,设置成mavlink2.波特率不用修改
 
 ## bugs
 Not found yet
@@ -28,3 +27,12 @@ Not found yet
 - 将获取飞控的SN码放在main函数中
 - 将4g模块的初始化函数放到main函数中
 - 将获取ID和时间戳放在StartTrackSendTask任务之前
+
+## Time:2025-2-12
+- 添加新版底板LED灯控制代码
+- LED1 入网判断
+- LED2 飞控通信
+- LED3 正在工作
+
+## Time:2025-2-25
+

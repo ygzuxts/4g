@@ -463,6 +463,11 @@
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_sdio_sd.c</FilePath>
             </File>
+            <File>
+              <FileName>bsp_led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\bsp_led.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1847,14 +1852,19 @@
               <FilePath>..\Middlewares\FatFs\ff_gen_drv.c</FilePath>
             </File>
             <File>
-              <FileName>unicode.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Middlewares\FatFs\option\unicode.c</FilePath>
-            </File>
-            <File>
               <FileName>sd_diskio.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Middlewares\FatFs\drivers\sd_diskio.c</FilePath>
+            </File>
+            <File>
+              <FileName>ccsbcs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\FatFs\option\ccsbcs.c</FilePath>
+            </File>
+            <File>
+              <FileName>syscall.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\FatFs\option\syscall.c</FilePath>
             </File>
           </Files>
         </Group>

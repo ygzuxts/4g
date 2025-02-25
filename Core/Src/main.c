@@ -28,7 +28,8 @@
 /* USER CODE BEGIN Includes */
 #include "usart_debug.h"
 #include "usart_4gmoudle.h"
-
+#include "task_log.h"
+#include "bsp_led.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -102,6 +103,8 @@ int main(void)
     MX_USART1_UART_Init();
     MX_USART2_UART_Init();
     MX_USART3_UART_Init();
+    Led_init();
+    
     /* USER CODE BEGIN 2 */
     fifo_init(&mavlink_uart_rx_fifo, mavlink_uart_rx_buf, MAVLINK_UART_RX_BUFFER_SIZE); // 初始化mavlink fifo
     mavlink_system.sysid = MAV_TYPE_GENERIC;
@@ -112,8 +115,7 @@ int main(void)
     cJSONhooks_freeRTOS.free_fn = vPortFree;
     cJSON_InitHooks(&cJSONhooks_freeRTOS);
 
-    HAL_Delay(5000); // 等待4G模块和飞控上电，大概需要5S // 这个时间不能再短了
-
+    HAL_Delay(3000); // 等待4G模块和飞控上电
     while (sn[0] == 0)
     {
         malvlink_serial_num_request_send();
@@ -121,14 +123,17 @@ int main(void)
         HAL_Delay(100);
     }
     printf("sn is %s\r\n", sn);
+    SetLEDState(2, 2);
 
     while (usrMoudle_Init())
         ; // 初始化4G模块
-
-    HAL_Delay(15000); // 等待4G模块保存参数重启
+    HAL_Delay(10000); // 等待4G模块保存参数重启
 
     printf("4G Cat Config Success\r\n");
     usrMoudleInintSuccess = true;
+
+    SetLEDState(3, 2); // 自检通过
+
     /* USER CODE END 2 */
 
     /* Call init function for freertos objects (in cmsis_os2.c) */

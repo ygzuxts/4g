@@ -1,53 +1,23 @@
-#include "task_log.h"
+#include <string.h>
+#include "Logger.h"
+#include "fatfs.h"
 
-/* FatFs includes component */
-#include "ff.h"
-#include "ff_gen_drv.h"
-#include "sd_diskio.h"
-#include "cmsis_os.h"
-#include "mavlink_parse.h"
-
-char SDPath[4]; // SD逻辑驱动器路径
-FATFS fs;       // FatFs文件系统对象
+FATFS fs;
 FATFS *pfs;
-FIL fnew;                       // 文件对象
-FRESULT res_sd;                 // 文件操作结果
-DWORD fre_clust;                // 空闲簇数量
-UINT fnum;                      // 文件成功读写数量
-uint32_t totalSpace, freeSpace; // 总空间，剩余空间
-char *currentlogfilename;       // 当前LOG文档名字
-
-extern FATFS flash_fs;
-extern Diskio_drvTypeDef SD_Driver;
+FIL fil;
+DWORD fre_clust;
+uint32_t totalSpace, freeSpace;
+FRESULT fres;
+UINT br, bw;
 
 const struct LogStructure log_structure[] = {
     {LOG_FORMAT_MSG, sizeof(struct log_Format),
      "FMT", "BBnNZ", "Type,Length,Name,Format,Columns"},
+    {LOG_TEST_MSG, sizeof(struct log_TEST),
+     "TEST", "QH", "TimeUS,value"},
 };
 
-uint8_t Log_Init(void)
-{
-    // 链接驱动器，创建盘符
-    FATFS_LinkDriver(&SD_Driver, SDPath);
-    uint8_t i;
-    for (i = 0; i < ARRAY_SIZE(log_structure); i++)
-    {
-        Write_Format(&log_structure[i]);
-    }
-    currentlogfilename = pvPortMalloc(_MAX_LFN + 1); // 为LOG文件名分配内存
-}
-
-// 根据任务时间戳创建LOG文件
-uint8_t CreateLogFile(uint64_t timestamp)
-{
-    char *name = pvPortMalloc(_MAX_LFN + 1);
-    char *filename = pvPortMalloc(_MAX_LFN + 1);
-    timestamp_to_datetime(timestamp, name);
-    sprintf(filename, "%s%s", name, ".txt");
-    currentlogfilename = filename;
-    vPortFree(name);
-    vPortFree(filename);
-}
+uint8_t Write_Format(const struct LogStructure *s);
 
 uint8_t WriteBlock(const void *pBuffer, uint16_t size)
 {
@@ -56,7 +26,7 @@ uint8_t WriteBlock(const void *pBuffer, uint16_t size)
         return 1;
 
     /* Open file to write */
-    if (f_open(&fnew, currentlogfilename, FA_OPEN_EXISTING | FA_WRITE) != FR_OK)
+    if (f_open(&fil, "log.bin", FA_OPEN_APPEND | FA_WRITE) != FR_OK)
         return 2;
 
     /* Check freeSpace space */
@@ -71,10 +41,10 @@ uint8_t WriteBlock(const void *pBuffer, uint16_t size)
         return 4;
 
     /* Writing*/
-    f_write(&fnew, pBuffer, size, &fnum);
+    f_write(&fil, pBuffer, size, &bw);
 
     /* Close file */
-    if (f_close(&fnew) != FR_OK)
+    if (f_close(&fil) != FR_OK)
         return 5;
 
     /* Unmount SDCARD */
@@ -83,6 +53,7 @@ uint8_t WriteBlock(const void *pBuffer, uint16_t size)
 
     return 0;
 }
+
 void Fill_Format(const struct LogStructure *s, struct log_Format *pkt)
 {
     memset(pkt, 0, sizeof(*pkt));
@@ -95,6 +66,16 @@ void Fill_Format(const struct LogStructure *s, struct log_Format *pkt)
     strncpy(pkt->format, s->format, sizeof(pkt->format));
     strncpy(pkt->labels, s->labels, sizeof(pkt->labels));
 }
+
+void Log_Init(void)
+{
+    uint8_t i;
+    for (i = 0; i < ARRAY_SIZE(log_structure); i++)
+    {
+        Write_Format(&log_structure[i]);
+    }
+}
+
 /*
   write a structure format to the log
  */

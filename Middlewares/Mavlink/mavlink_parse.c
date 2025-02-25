@@ -121,9 +121,11 @@ void update(void)
 void handleMessage(mavlink_message_t msg)
 {
     // printf("msg->msgid is %d\r\n", msg.msgid);
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_5);
     switch (msg.msgid)
     {
     case MAVLINK_MSG_ID_HEARTBEAT:
+
         MAVLINK_MSG_ID_HEARTBEAT_ACTION(msg);
         break;
     case MAVLINK_MSG_ID_ATTITUDE:
@@ -306,10 +308,9 @@ void MAVLINK_MSG_ID_GPS_RAW_INT_ACTION(mavlink_message_t MAVLinkMsg)
     {
         distance_flag = false;
         dis = distance(lat_last, lon_last, pTrackInfo.lat, pTrackInfo.lon);
-        (dis > 10.0f) ? (dis = 0) : (dis = dis); // 做一个限制，防止解锁时未获得GPS信号
+        (dis > 1000.0f) ? (dis = 0) : (dis = dis); // 做一个限制，防止解锁时未获得GPS信号
         lat_last = pTrackInfo.lat;
         lon_last = pTrackInfo.lon;
         fdistance = fdistance + dis;
-        printf("distance is %.2f\r\n", fdistance);
     }
 }

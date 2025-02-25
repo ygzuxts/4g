@@ -1,11 +1,7 @@
-#ifndef _TASK_LOG_H_
-#define _TASK_LOG_H_
+#ifndef __LOGGER_H
+#define __LOGGER_H
 
-#include "stm32f4xx.h"
-
-#include "stdio.h"
-#include "stdbool.h"
-#include "stdint.h"
+#include <stdint.h>
 
 /*
 Format characters in the format string for binary log messages
@@ -69,6 +65,13 @@ struct PACKED log_Format
     char labels[64];
 };
 
+struct PACKED log_TEST
+{
+    LOG_PACKET_HEADER
+    uint64_t time_us;
+    uint16_t value;
+};
+
 enum LogMessages
 {
     LOG_TEST_MSG = 0,
@@ -78,7 +81,7 @@ enum LogMessages
     _LOG_LAST_MSG_
 };
 
-uint8_t Write_Format(const struct LogStructure *s);
-uint8_t Log_Init(void);
+void Log_Init(void);
+void Write_Test(uint64_t time_us, uint16_t value);
 
 #endif

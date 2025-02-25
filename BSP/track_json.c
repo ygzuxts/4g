@@ -7,8 +7,7 @@
 #include "track_queue.h"
 #include "cmsis_os.h"
 #include "math.h"
-
-
+#include "bsp_led.h"
 extern uint64_t getTaskExecutionCnt(void);
 
 extern char sn[20];
@@ -19,21 +18,17 @@ extern bool SendTaskStateFlag;
 extern LinkedList pTrackList;
 extern TrackInfo pTrackInfo;
 
-
 bool tag_flag = true;     // 是否收到云网回复
 bool jobid_ready = false; // 是否从云网获取到任务ID
 char token[10] = "0";
-char cv[10] = "0";        // 固件版本
-char fv[10] = "0";        // 飞控版本
-uint8_t client = 0;       // 0:地面站
-uint64_t timestamp = 0;   // 云网发送的时间戳
-uint32_t jobId = 0;       // 任务序号
-uint32_t trackNum = 0;    // 发送的航点序号
-uint32_t duration = 0;    // 持续时间
-uint32_t id = 0;          // 飞机固定ID，从云网获取
-
-
-
+char cv[10] = "0";      // 固件版本
+char fv[10] = "0";      // 飞控版本
+uint8_t client = 0;     // 0:地面站
+uint64_t timestamp = 0; // 云网发送的时间戳
+uint32_t jobId = 0;     // 任务序号
+uint32_t trackNum = 0;  // 发送的航点序号
+uint32_t duration = 0;  // 持续时间
+uint32_t id = 0;        // 飞机固定ID，从云网获取
 
 // 向云网发送数据
 void sendData(cJSON *cjson, char *type)
@@ -65,11 +60,12 @@ void sendData(cJSON *cjson, char *type)
         {
             printf("send track\r\n");
             USART3_SendBytes((uint8_t *)buffer, strlen(buffer) + 1);
-            if (sendNum++ >= 2) // 防止和RTCM报文冲突
+            if (sendNum++ >= 1) // 防止和RTCM报文冲突
             {
                 sendNum = 0;
                 break;
             }
+            SetLEDState(1,3);
             osDelay(1000);
         }
         tag_flag = 1;
@@ -209,6 +205,7 @@ void json_prarse(cJSON *cjson)
 
     if ((strcmp(cjson_souce->valuestring, "4G") == 0))
     {
+        SetLEDState(1,3);
         if (strcmp(cjson_type->valuestring, "/Job/Ready") == 0)
         {
             cjson_id = cJSON_GetObjectItem(cjson_info, "id");   //
@@ -216,12 +213,12 @@ void json_prarse(cJSON *cjson)
             if (cJSON_IsNumber(cjson_id))
             {
                 id = cjson_id->valueint;
-                printf("id is %d\r\n",id);
+                printf("id is %d\r\n", id);
             }
             if (cJSON_IsNumber(cjson_st))
             {
                 timestamp = (uint64_t)cjson_st->valuedouble;
-                printf("timestamp is %lld\r\n",timestamp);
+                printf("timestamp is %lld\r\n", timestamp);
             }
         }
         if (strcmp(cjson_type->valuestring, "/Job/Start") == 0)

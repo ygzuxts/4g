@@ -36,10 +36,13 @@
 #include "mavlink_parse.h"
 #include "track_json.h"
 #include "rtcm_parse.h"
+#include "bsp_led.h"
 /* FatFs includes component */
 #include "ff.h"
 #include "ff_gen_drv.h"
 #include "sd_diskio.h"
+#include "task_log.h"
+#include "event_groups.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -80,11 +83,16 @@ extern UINT fnum;          /* 文件成功读写数量 */
 extern BYTE WriteBuffer[]; /* 写缓冲区*/
 extern FATFS flash_fs;
 extern Diskio_drvTypeDef SD_Driver;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define BIT_Task01_EVENT (EventBits_t)(0x0001 << 0)
+#define BIT_Task02_EVENT (EventBits_t)(0x0001 << 1)
+#define BIT_Task03_EVENT (EventBits_t)(0x0001 << 2)
+#define BIT_Task04_EVENT (EventBits_t)(0x0001 << 3)
+#define BIT_TaskAll_EVENT BIT_Task01_EVENT | BIT_Task02_EVENT | BIT_Task03_EVENT | BIT_Task04_EVENT
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -204,6 +212,7 @@ void StartTrackRecodeTask(void const *argument)
     while (1)
     {
         malvlink_heart_send();
+
         if (taskflag == true)
         {
             if (gps_ready && attitude_ready && jobid_ready)
@@ -214,6 +223,15 @@ void StartTrackRecodeTask(void const *argument)
                 insertDataAtEnd(&pTrackList, pTrackInfo);
             }
         }
+        if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_SET) // LED1 闪烁证明4G模块联网正常
+        {
+            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_3);
+        }
+        else if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_RESET) // 亮红灯证明4G模块联网异常
+        {
+            SetLEDState(1, 1);
+        }
+
         vTaskDelayUntil(&lastWakeTime, F2T(RATE_1_HZ));
     }
     /* USER CODE END StartTrackRecodeTask */
@@ -235,8 +253,9 @@ void StartTrackSendTask(void const *argument)
     {
         printf("send ready task\r\n");
         readyTask(); // 发送准备作业
-        osDelay(5000);
+        osDelay(3000);
     }
+    SetLEDState(1, 2);
     printf("id is %d  timestamp is %lld\r\n", id, timestamp);
 
     while (1)
@@ -272,6 +291,7 @@ void StartTrackSendTask(void const *argument)
             jobId = 0;
             jobid_ready = 0;
             destroyLinkedList(&pTrackList);
+            SetLEDState(1, 2); // 自检通过
         }
         osDelay(1000);
     }
