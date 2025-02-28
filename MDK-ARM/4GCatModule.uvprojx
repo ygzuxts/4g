@@ -80,7 +80,7 @@
             <nStopB2X>0</nStopB2X>
           </BeforeMake>
           <AfterMake>
-            <RunUserProg1>0</RunUserProg1>
+            <RunUserProg1>1</RunUserProg1>
             <RunUserProg2>0</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
@@ -467,6 +467,11 @@
               <FileName>bsp_led.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_led.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_Flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\bsp_Flash.c</FilePath>
             </File>
           </Files>
         </Group>

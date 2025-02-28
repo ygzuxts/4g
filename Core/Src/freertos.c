@@ -223,14 +223,7 @@ void StartTrackRecodeTask(void const *argument)
                 insertDataAtEnd(&pTrackList, pTrackInfo);
             }
         }
-        if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_SET) // LED1 闪烁证明4G模块联网正常
-        {
-            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_3);
-        }
-        else if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_RESET) // 亮红灯证明4G模块联网异常
-        {
-            SetLEDState(1, 1);
-        }
+
 
         vTaskDelayUntil(&lastWakeTime, F2T(RATE_1_HZ));
     }
@@ -253,13 +246,18 @@ void StartTrackSendTask(void const *argument)
     {
         printf("send ready task\r\n");
         readyTask(); // 发送准备作业
-        osDelay(3000);
+        osDelay(5000);
     }
     SetLEDState(1, 2);
     printf("id is %d  timestamp is %lld\r\n", id, timestamp);
 
     while (1)
     {
+        if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_SET) // LED1 闪烁证明4G模块联网正常
+        {
+            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_3);
+        }
+        
         if (!jobid_ready && taskflag == true) // 向云网发送任务开始
         {
             taskAction();

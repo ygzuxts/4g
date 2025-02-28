@@ -156,7 +156,7 @@ uint8_t usrMoudle_Init(void)
         usrmoudle_send_at_cmd("AT+MQTTSVR=112.126.73.65,1883\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+MQTTUSER=wkzy\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+MQTTPSW=wkzy\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTCID=02401322083\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+MQTTCID=0240132208302\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+MQTTVER=3\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+MQTTMOD=1\r\n", "OK", 2000);
 

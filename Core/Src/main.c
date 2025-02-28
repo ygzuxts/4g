@@ -30,6 +30,7 @@
 #include "usart_4gmoudle.h"
 #include "task_log.h"
 #include "bsp_led.h"
+#include "bsp_Flash.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,7 +105,7 @@ int main(void)
     MX_USART2_UART_Init();
     MX_USART3_UART_Init();
     Led_init();
-    
+
     /* USER CODE BEGIN 2 */
     fifo_init(&mavlink_uart_rx_fifo, mavlink_uart_rx_buf, MAVLINK_UART_RX_BUFFER_SIZE); // 初始化mavlink fifo
     mavlink_system.sysid = MAV_TYPE_GENERIC;
@@ -115,7 +116,7 @@ int main(void)
     cJSONhooks_freeRTOS.free_fn = vPortFree;
     cJSON_InitHooks(&cJSONhooks_freeRTOS);
 
-    HAL_Delay(3000); // 等待4G模块和飞控上电
+    HAL_Delay(5000); // 等待4G模块和飞控上电
     while (sn[0] == 0)
     {
         malvlink_serial_num_request_send();
@@ -125,9 +126,13 @@ int main(void)
     printf("sn is %s\r\n", sn);
     SetLEDState(2, 2);
 
-    while (usrMoudle_Init())
-        ; // 初始化4G模块
-    HAL_Delay(10000); // 等待4G模块保存参数重启
+    if (Flash_Read())
+    {
+        while (usrMoudle_Init())
+            ; // 初始化4G模块
+        Flash_Write();
+        HAL_Delay(10000); // 等待4G模块保存参数重启
+    }
 
     printf("4G Cat Config Success\r\n");
     usrMoudleInintSuccess = true;
