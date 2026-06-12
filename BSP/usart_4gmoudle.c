@@ -5,9 +5,9 @@
 #include <stdarg.h>
 #include "cmsis_os.h"
 
-UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart1;
 
-/* USART3 init function */
+/* USART1 init function */
 
 uint8_t RxBuffer[1500] = {0};
 uint32_t ucRxCnt = 0;
@@ -18,19 +18,19 @@ extern char sn[20];
 #define ATK_MW8266D_UART_TX_BUF_SIZE 64
 static struct
 {
-    uint8_t buf[USRMoudle_UART_RX_BUF_SIZE]; // 帧接收缓冲
+    uint8_t buf[USRMoudle_UART_RX_BUF_SIZE]; // 帧接收缓�?
     struct
     {
         uint16_t len : 15;                                // 帧接收长度，sta[14:0]
         uint16_t finish : 1;                              // 帧接收完成标志，sta[15]
-    } sta;                                                // 帧状态信息
-} uart_rx_frame = {0};                                    // USRMoudle UART接收帧缓冲信息结构体
-static uint8_t uart_tx_buf[ATK_MW8266D_UART_TX_BUF_SIZE]; // USRMoudle UART发送缓冲
+    } sta;                                                // 帧状态信�?
+} uart_rx_frame = {0};                                    // USRMoudle UART接收帧缓冲信�?结构�?
+static uint8_t uart_tx_buf[ATK_MW8266D_UART_TX_BUF_SIZE]; // USRMoudle UART发送缓�?
 
 /**
  * @brief       USRMoudle UART printf
  * @param       fmt: 待打印的数据
- * @retval      无
+ * @retval      �?
  */
 void USRMoudle_uart_printf(char *fmt, ...)
 {
@@ -42,14 +42,14 @@ void USRMoudle_uart_printf(char *fmt, ...)
     va_end(ap);
 
     len = strlen((const char *)uart_tx_buf);
-    HAL_UART_Transmit(&huart3, uart_tx_buf, len, 1000);
+    HAL_UART_Transmit(&huart1, uart_tx_buf, len, 1000);
     memset(uart_tx_buf, 0, sizeof(uart_tx_buf));
 }
 
 /**
- * @brief       USRMoudle UART重新开始接收数据
- * @param       无
- * @retval      无
+ * @brief       USRMoudle UART重新开始接收数�?
+ * @param       �?
+ * @retval      �?
  */
 void USRMoudle_uart_rx_restart(void)
 {
@@ -59,10 +59,10 @@ void USRMoudle_uart_rx_restart(void)
 }
 
 /**
- * @brief       获取USRMoudle UART接收到的一帧数据
- * @param       无
- * @retval      NULL: 未接收到一帧数据
- *              其他: 接收到的一帧数据
+ * @brief       获取USRMoudle UART接收到的一帧数�?
+ * @param       �?
+ * @retval      NULL: �?接收到一帧数�?
+ *              其他: 接收到的一帧数�?
  */
 uint8_t *USRMoudle_uart_rx_get_frame(void)
 {
@@ -77,10 +77,10 @@ uint8_t *USRMoudle_uart_rx_get_frame(void)
 }
 
 /**
- * @brief       获取USRMoudle UART接收到的一帧数据的长度
- * @param       无
- * @retval      0   : 未接收到一帧数据
- *              其他: 接收到的一帧数据的长度
+ * @brief       获取USRMoudle UART接收到的一帧数�?的长�?
+ * @param       �?
+ * @retval      0   : �?接收到一帧数�?
+ *              其他: 接收到的一帧数�?的长�?
  */
 uint16_t USRMoudle_uart_rx_get_frame_len(void)
 {
@@ -150,18 +150,35 @@ uint8_t usrMoudle_Init(void)
     usrmoudle_send_at_cmd("+++", "a", 300);
     if (usrmoudle_send_at_cmd("a", "+ok", 300) == 0)
     {
-        usrmoudle_send_at_cmd("AT+E=OFF\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+E=OFF\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+WKMOD=MQTT,NOR\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+HEARTEN=OFF\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTSVR=112.126.73.65,1883\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTUSER=wkzy\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTPSW=wkzy\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTCID=0240132208302\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTVER=3\r\n", "OK", 2000);
+//        usrmoudle_send_at_cmd("AT+MQTTMOD=1\r\n", "OK", 2000);
+
+				usrmoudle_send_at_cmd("AT+E=OFF\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+WKMOD=MQTT,NOR\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+HEARTEN=OFF\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTSVR=112.126.73.65,1883\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTUSER=wkzy\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTPSW=wkzy\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTCID=0240132208302\r\n", "OK", 2000);
-        usrmoudle_send_at_cmd("AT+MQTTVER=3\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+MQTTSVR=47.112.204.68,1883\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+MQTTUSER=antg!@211520\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+MQTTPSW=admin\r\n", "OK", 2000);
+				usrmoudle_send_at_cmd("AT+UARTFL=4096\r\n", "OK", 2000);			
+			
+			  sprintf(EC_topic, "AT+MQTTCID=%s\r\n", sn);
+				printf("%s\r\n",EC_topic);
+        usrmoudle_send_at_cmd(EC_topic, "OK", 2000);
+				memset(EC_topic, 0, sizeof(EC_topic));
+			
+        usrmoudle_send_at_cmd("AT+MQTTVER=4\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+MQTTMOD=1\r\n", "OK", 2000);
-
+			
         usrmoudle_send_at_cmd("AT+MQTTPUBTP=1,1,/Job,0,0\r\n", "OK", 2000);
         sprintf(EC_topic, "AT+MQTTPUBTP=2,1,/Job/%s/4G,0,0\r\n", sn);
+				printf("sn set = %s\r\n",sn);
 
         usrmoudle_send_at_cmd(EC_topic, "OK", 2000);
         memset(EC_topic, 0, sizeof(EC_topic));
@@ -185,93 +202,93 @@ uint8_t usrMoudle_Init(void)
     }
     return 1;
 }
-void MX_USART3_UART_Init(void)
+void MX_USART1_UART_Init(void)
 {
 
-    /* USER CODE BEGIN USART3_Init 0 */
+    /* USER CODE BEGIN USART1_Init 0 */
     GPIO_InitTypeDef GPIO_InitStruct = {0};
-    /* USER CODE END USART3_Init 0 */
-    /* USER CODE END USART3_MspInit 0 */
-    /* USART3 clock enable */
-    __HAL_RCC_USART3_CLK_ENABLE();
+    /* USER CODE END USART1_Init 0 */
+    /* USER CODE END USART1_MspInit 0 */
+    /* USART1 clock enable */
+    __HAL_RCC_USART1_CLK_ENABLE();
 
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-    /**USART3 GPIO Configuration
-    PB10     ------> USART3_TX
-    PB11     ------> USART3_RX
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**USART1 GPIO Configuration
+    PA9     ------> USART1_TX
+    PA10     ------> USART1_RX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9;
+    GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    /* USER CODE BEGIN USART3_MspInit 1 */
+    /* USER CODE BEGIN USART1_MspInit 1 */
 
-    /* USER CODE END USART3_MspInit 1 */
-    /* USER CODE BEGIN USART3_Init 1 */
+    /* USER CODE END USART1_MspInit 1 */
+    /* USER CODE BEGIN USART1_Init 1 */
 
-    /* USER CODE END USART3_Init 1 */
-    huart3.Instance = USART3;
-    huart3.Init.BaudRate = 115200;
-    huart3.Init.WordLength = UART_WORDLENGTH_8B;
-    huart3.Init.StopBits = UART_STOPBITS_1;
-    huart3.Init.Parity = UART_PARITY_NONE;
-    huart3.Init.Mode = UART_MODE_TX_RX;
-    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-    HAL_UART_Init(&huart3);
-    /* USER CODE BEGIN USART3_Init 2 */
-    /* USART3 interrupt Init */
-    __HAL_UART_ENABLE_IT(&huart3, UART_IT_RXNE);
-    __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
-    __HAL_UART_CLEAR_IDLEFLAG(&huart3);
-    HAL_NVIC_SetPriority(USART3_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(USART3_IRQn);
-    /* USER CODE END USART3_Init 2 */
+    /* USER CODE END USART1_Init 1 */
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart1);
+    /* USER CODE BEGIN USART1_Init 2 */
+    /* USART1 interrupt Init */
+    __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
+    __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
+    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
+    HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+    /* USER CODE END USART1_Init 2 */
 }
 
 /**
- * @brief This function handles USART3 global interrupt.
+ * @brief This function handles USART1 global interrupt.
  */
-void USART3_IRQHandler(void)
+void USART1_IRQHandler(void)
 {
     uint8_t RxData = 0;
-    if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_ORE) != RESET) // UART接收过载中断
+    if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_ORE) != RESET) // UART接收过载�?�?
     {
-        __HAL_UART_CLEAR_OREFLAG(&huart3); // 清空标志位
-        (void)huart3.Instance->SR;         // 清空SR寄存器，清空DR寄存器
-        (void)huart3.Instance->DR;
+        __HAL_UART_CLEAR_OREFLAG(&huart1); // 清空标志�?
+        (void)huart1.Instance->SR;         // 清空SR寄存�?，清空DR寄存�?
+        (void)huart1.Instance->DR;
     }
 
-    if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE) != RESET)
+    if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE) != RESET)
     {
         if (usrMoudleInintSuccess == true)
         {
             if (ucRxCnt >= sizeof(RxBuffer))
                 ucRxCnt = 0;
-            HAL_UART_Receive(&huart3, &RxData, 1, 1000);
+            HAL_UART_Receive(&huart1, &RxData, 1, 1000);
             RxBuffer[ucRxCnt++] = RxData;
         }
         else
         {
-            HAL_UART_Receive(&huart3, &RxData, 1, 1000);
-            if (uart_rx_frame.sta.len < (USRMoudle_UART_RX_BUF_SIZE - 1)) // 判断UART接收缓冲是否溢出留出一位给结束符'\0'
+            HAL_UART_Receive(&huart1, &RxData, 1, 1000);
+            if (uart_rx_frame.sta.len < (USRMoudle_UART_RX_BUF_SIZE - 1)) // 判断UART接收缓冲�?否溢出留出一位给结束�?'\0'
             {
-                uart_rx_frame.buf[uart_rx_frame.sta.len] = RxData; // 将接收到的数据写入缓冲
+                uart_rx_frame.buf[uart_rx_frame.sta.len] = RxData; // 将接收到的数�?写入缓冲
                 uart_rx_frame.sta.len++;                           // 更新接收到的数据长度
             }
             else
             {
-                uart_rx_frame.sta.len = 0;                         // 覆盖之前收到的数据
-                uart_rx_frame.buf[uart_rx_frame.sta.len] = RxData; // 将接收到的数据写入缓冲
+                uart_rx_frame.sta.len = 0;                         // 覆盖之前收到的数�?
+                uart_rx_frame.buf[uart_rx_frame.sta.len] = RxData; // 将接收到的数�?写入缓冲
                 uart_rx_frame.sta.len++;                           // 更新接收到的数据长度
             }
         }
     }
 
-    if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE) != RESET)
+    if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE) != RESET)
     {
         if (usrMoudleInintSuccess == true)
         {
@@ -282,11 +299,11 @@ void USART3_IRQHandler(void)
             uart_rx_frame.sta.finish = 1;
         }
 
-        __HAL_UART_CLEAR_IDLEFLAG(&huart3);
+        __HAL_UART_CLEAR_IDLEFLAG(&huart1);
     }
 }
 
-void USART3_SendBytes(uint8_t *buf, uint16_t len)
+void USART1_SendBytes(uint8_t *buf, uint16_t len)
 {
-    HAL_UART_Transmit(&huart3, buf, len, 1000); // 串口发送数据
+    HAL_UART_Transmit(&huart1, buf, len, 1000); // 串口发送数�?
 }

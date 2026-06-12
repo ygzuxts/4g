@@ -1,0 +1,3 @@
+为了适配高集成飞控上的4G模块，对usart_4gmoudle.c和usart_debug.c做出修改
+1-将usart_4gmoudle.c中的PD8，PD9改为PA9，PA10，所有usart3改为usart1;
+2-将usart_debug.c中所有usart1改为usart3

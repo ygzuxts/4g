@@ -3,9 +3,9 @@
 
 #include "stm32f4xx.h"
 
-extern UART_HandleTypeDef huart3;
-void USART3_SendBytes(uint8_t *buf, uint16_t len);
-void MX_USART3_UART_Init(void);
+extern UART_HandleTypeDef huart1;
+void USART1_SendBytes(uint8_t *buf, uint16_t len);
+void MX_USART1_UART_Init(void);
 uint8_t usrMoudle_Clear(void);
 uint8_t usrMoudle_Init(void);
 void USRMoudle_uart_rx_restart(void);

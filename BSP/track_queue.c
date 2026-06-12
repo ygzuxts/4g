@@ -62,7 +62,6 @@ void insertDataAtEnd(LinkedList *list, TrackInfo data)
     }
 
     list->length++;
-
     // 如果链表长度超过最大长度，替换最后一个
     if (list->length > MAX_LENGTH)
     {

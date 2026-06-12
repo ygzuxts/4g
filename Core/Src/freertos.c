@@ -84,6 +84,16 @@ extern BYTE WriteBuffer[]; /* 写缓冲区*/
 extern FATFS flash_fs;
 extern Diskio_drvTypeDef SD_Driver;
 
+/* deal with Task time id start */
+//获取时间戳信息
+uint64_t timestamp_gnsss = 0;
+volatile uint64_t g_task_id = 0;
+
+/* 用于保护 RTC/BKP 的互斥锁 */
+osMutexId gRtcMutexHandle;
+//osMutexDef(gRtcMutex)
+/* deal with Task time id end */
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -131,6 +141,7 @@ void StartTrackRecodeTask(void const *argument);
 void StartTrackSendTask(void const *argument);
 void StartMavlinkParseTask(void const *argument);
 void StartJsonParseTask(void const *argument);
+void StartTaskIdInitTask(void const * argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -158,15 +169,17 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackTyp
 void MX_FREERTOS_Init(void)
 {
     /* USER CODE BEGIN Init */
-
+    /* 可选：先把全局ID置0 */
+    g_task_id = 0;
     /* USER CODE END Init */
 
     /* USER CODE BEGIN RTOS_MUTEX */
     /* add mutexes, ... */
     /* USER CODE END RTOS_MUTEX */
-
     /* USER CODE BEGIN RTOS_SEMAPHORES */
     /* add semaphores, ... */
+
+	
     /* USER CODE END RTOS_SEMAPHORES */
 
     /* USER CODE BEGIN RTOS_TIMERS */
@@ -194,6 +207,10 @@ void MX_FREERTOS_Init(void)
     /* add threads, ... */
     osThreadDef(JsonParseTask, StartJsonParseTask, osPriorityNormal, 0, 4096);
     JsonParseTaskHandle = osThreadCreate(osThread(JsonParseTask), NULL);
+		
+		/* definition and creation of TrackRecodeTask */
+    osThreadDef(TaskIdInitTask, StartTaskIdInitTask, osPriorityAboveNormal, 0, 1024);
+    TrackRecodeTaskHandle = osThreadCreate(osThread(TaskIdInitTask), NULL);
     /* USER CODE END RTOS_THREADS */
 }
 
@@ -215,7 +232,8 @@ void StartTrackRecodeTask(void const *argument)
 
         if (taskflag == true)
         {
-            if (gps_ready && attitude_ready && jobid_ready)
+//            if (gps_ready && attitude_ready && jobid_ready)
+						if (gps_ready && attitude_ready )
             {
                 gps_ready = false;
                 attitude_ready = false;
@@ -242,15 +260,16 @@ void StartTrackSendTask(void const *argument)
 {
     /* USER CODE BEGIN StartTrackSendTask */
     /* Infinite loop */
-    while ((id == 0 || timestamp == 0)) // 获取飞控ID和云网时间戳
+		id = 777;
+		timestamp = 1759127916;
+    while ((id == 0 || timestamp == 0)) // 获取任务ID和云网时间戳
     {
         printf("send ready task\r\n");
         readyTask(); // 发送准备作业
         osDelay(5000);
     }
+		readyTask(); // 发送准备作业
     SetLEDState(1, 2);
-    printf("id is %d  timestamp is %lld\r\n", id, timestamp);
-
     while (1)
     {
         if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_13) == GPIO_PIN_SET) // LED1 闪烁证明4G模块联网正常
@@ -258,31 +277,45 @@ void StartTrackSendTask(void const *argument)
             HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_3);
         }
         
-        if (!jobid_ready && taskflag == true) // 向云网发送任务开始
-        {
+//        if (!jobid_ready && taskflag == true) // 向云网发送任务开始
+					if ( taskflag == true)
+					{
             taskAction();
-        }
-        if (taskflag == true && jobid_ready == true) // 等待jobid和时间戳
-        {
-            printf("queue size is %d\r\n", getLinkedListLength(&pTrackList));
-            if (getLinkedListLength(&pTrackList) >= 5)
-            {
-                uploadTrack();
-            }
-        }
-
+						
+					}
+///////////***五个任务航点传输时使用下面代码****/
+//        if (taskflag == true && jobid_ready == true) // 等待jobid和时间戳
+//				{
+//						printf("queue size is %d\r\n", getLinkedListLength(&pTrackList));
+//            if (getLinkedListLength(&pTrackList) >= 5)
+//            {
+//                uploadTrack();
+//								
+//            }
+//						
+//        }
+				//安特狗项目需求发送数据
+				normal_status_Action();
+					
+				//taskflag = false;//for finish info test
         if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) >= 5) //
         {
             printf("send heap track\r\n");
             uploadTrack();
         }
         else if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) < 5)
+				//else if (taskflag == false )//for finish info test
         {
             printf("send task finish\r\n");
             SendTaskStateFlag = false;
             finishTask();
             osDelay(2000);
             finishTask();
+					
+//						osDelay(2000);								//for finish info test
+//						startTask(); // 发送开始作业	//for finish info test
+//            printf("startTask\r\n");			//for finish info test
+					
             osDelay(2000);
             fdistance = 0;
             trackNum = 0;
@@ -290,6 +323,9 @@ void StartTrackSendTask(void const *argument)
             jobid_ready = 0;
             destroyLinkedList(&pTrackList);
             SetLEDState(1, 2); // 自检通过
+					
+						
+						//taskflag = true;//for finish info test
         }
         osDelay(1000);
     }
@@ -355,5 +391,24 @@ void StartJsonParseTask(void const *argument)
 }
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
+
+void StartTaskIdInitTask(void const * argument)
+{
+//    /* 等 GNSS 时间有效,轮询 gnss_time_is_valid()*/
+			while (!gnss_time_is_valid()) {
+					osDelay(200);
+			}
+
+    taskid_initonce_fromgnss();
+
+    /* 生成后这个任务就没用了，删除自身 */
+    osThreadTerminate(NULL);
+}
+
+
+
+
+
 
 /* USER CODE END Application */

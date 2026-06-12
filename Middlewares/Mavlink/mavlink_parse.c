@@ -23,6 +23,8 @@ uint8_t armed_flag = 1;
 uint8_t disarme_flag = 2;
 uint8_t base_mode = 0;
 extern TrackInfo pTrackInfo;
+bool esc_rec_finish = true;
+bool escif_rec_finish = true;
 
 // 定义 Unix 时间戳起始时间的年份
 #define UNIX_START_YEAR 1970
@@ -125,9 +127,12 @@ void handleMessage(mavlink_message_t msg)
     switch (msg.msgid)
     {
     case MAVLINK_MSG_ID_HEARTBEAT:
-
+				
         MAVLINK_MSG_ID_HEARTBEAT_ACTION(msg);
         break;
+		case MAVLINK_MSG_ID_SYSTEM_TIME:
+				MAVLINK_MSG_ID_SYSTEM_TIME_ACTION(msg);
+				break;
     case MAVLINK_MSG_ID_ATTITUDE:
         MAVLINK_MSG_ID_ATTITUDE_ACTION(msg);
         break;
@@ -143,26 +148,51 @@ void handleMessage(mavlink_message_t msg)
     case MAVLINK_MSG_ID_GPS_RAW_INT:
         MAVLINK_MSG_ID_GPS_RAW_INT_ACTION(msg);
         break;
-    case MAVLINK_MSG_ID_SERIAL_NUMBER_ITEM:
-        MAVLINK_MAVLINK_MSG_ID_SERIAL_NUMBER_ITEM_ACTION(msg);
+    case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
+        MAVLINK_MSG_ID_AUTOPILOT_VERSION_ACTION(msg);
+        break;
+    case MAVLINK_MSG_ID_ACTUATOR_OUTPUT_STATUS:
+        MAVLINK_MSG_ID_ACTUATOR_OUTPUT_STATUS_ACTION(msg);
+        break;
+    case MAVLINK_MSG_ID_ATTITUDE_QUATERNION:
+        MAVLINK_MSG_ID_ATTITUDE_QUATERNION_ACTION(msg);
+        break;
+    case MAVLINK_MSG_ID_ESC_STATUS:
+        MAVLINK_MSG_ID_ESC_STATUS_ACTION(msg);
+        break;
+    case MAVLINK_MSG_ID_ESC_INFO:
+        MAVLINK_MSG_ID_ESC_INFO_ACTION(msg);
+        break;
+    case MAVLINK_MSG_ID_RC_CHANNELS:
+        MAVLINK_MSG_ID_RC_CHANNELS_ACTION(msg);
+        break;		
+		case MAVLINK_MSG_ID_BATTERY_STATUS:
+        MAVLINK_MSG_ID_BATTERY_STATUS_ACTION(msg);
+        break;	
+		case  MAVLINK_MSG_ID_CURRENT_MODE:
+        MAVLINK_MSG_ID_CURRENT_MODE_ACTION(msg);
+        break;			
+		case  MAVLINK_MSG_ID_MANUAL_CONTROL:
+        MAVLINK_MSG_ID_MANUAL_CONTROL_ACTION(msg);
         break;
     default:
         break;
+		
     }
 }
 
 void malvlink_serial_num_request_send(void)
 {
-    mavlink_message_t message_buf;
+//    mavlink_message_t message_buf;
 
-    uint8_t preesure_buffer[13];
-    uint16_t length = 0;
+//    uint8_t preesure_buffer[13];
+//    uint16_t length = 0;
 
-    // system_id、component_id随便设置，不影响发送，接收方自己能对号入座即可
-    mavlink_msg_serial_number_request_pack_chan(mavlink_system.sysid, mavlink_system.compid, MAVLINK_COMM_0, &message_buf, 200, 0);
+//    // system_id、component_id随便设置，不影响发送，接收方自己能对号入座即可
+//    mavlink_msg_serial_number_request_pack_chan(mavlink_system.sysid, mavlink_system.compid, MAVLINK_COMM_0, &message_buf, 200, 0);
 
-    length = mavlink_msg_to_send_buffer(preesure_buffer, &message_buf);
-    USART2_SendBytes(preesure_buffer, length);
+//    length = mavlink_msg_to_send_buffer(preesure_buffer, &message_buf);
+//    USART2_SendBytes(preesure_buffer, length);
 }
 void malvlink_heart_send(void)
 {
@@ -195,9 +225,10 @@ void mavlink_IsArmed(void)
     {
         if ((base_mode >> 7) == 0)
         {
-            taskflag = false;
-            SendTaskStateFlag = true;
-            printf("disarmed\r\n");
+          taskflag = false;
+           
+					SendTaskStateFlag = true;
+            //printf("disarmed\r\n");
             jobid_ready = 0;
         }
     }
@@ -207,17 +238,46 @@ void mavlink_IsArmed(void)
         {
             taskflag = true;
             SendTaskStateFlag = true; // 需要向4G模块发送任务开始
-            printf("armed\r\n");
+            //printf("armed\r\n");
         }
     }
+		
+		if((base_mode & (0x01<<7)) == 0){
+			//未解锁
+			pTrackInfo.armed = 0;
+			//未准备起飞
+			pTrackInfo.ready_to_fly = 0;
+		}else{
+			//已解锁
+			pTrackInfo.armed = 1;
+			//准备好起飞
+			pTrackInfo.ready_to_fly = 1;
+		}
+		
     old_base_mode = base_mode;
 }
-// 获取SN码
-void MAVLINK_MAVLINK_MSG_ID_SERIAL_NUMBER_ITEM_ACTION(mavlink_message_t MAVLinkMsg)
+// 转化获取的sn码为字符串
+void uid_to_sn_dec(uint64_t uid, char sn[20])
 {
-    mavlink_msg_serial_number_item_get_serial_num(&MAVLinkMsg, sn);
+    snprintf(sn, 20, "%llu", (unsigned long long)uid);
+		printf("SN: %s.\r\n",sn);
 }
-// 解析飞控位姿信息
+
+// 获取SN码
+void MAVLINK_MSG_ID_AUTOPILOT_VERSION_ACTION(mavlink_message_t MAVLinkMsg)
+{
+		uint64_t sum=0;
+		mavlink_autopilot_version_t autopilot_version;
+    mavlink_msg_autopilot_version_decode(&MAVLinkMsg, &autopilot_version);
+		for(uint8_t i=0;i<18;i++){
+			sum += autopilot_version.uid2[i];
+			
+			//printf("UID2[%d]: %d.\r\n",i,autopilot_version.uid2[i]);
+		}
+		uid_to_sn_dec(sum,sn);//autopilot_version.uid
+		printf("UID: %lld.\r\n",sum);
+}
+// 解析飞控位姿信息_pitch_yaw_roll
 void MAVLINK_MSG_ID_ATTITUDE_ACTION(mavlink_message_t MAVLinkMsg)
 {
     mavlink_attitude_t attitude;
@@ -235,14 +295,7 @@ void MAVLINK_MSG_ID_GLOBAL_POSITION_INT_ACTION(mavlink_message_t MAVLinkMsg)
     mavlink_msg_global_position_int_decode(&MAVLinkMsg, &global_position);
 }
 
-void MAVLINK_MSG_ID_LOCAL_POSITION_NED_ACTION(mavlink_message_t MAVLinkMsg)
-{
-    mavlink_local_position_ned_t local_position_ned;
 
-    mavlink_msg_local_position_ned_decode(&MAVLinkMsg, &local_position_ned);
-
-    pTrackInfo.alt = -(double)local_position_ned.z;
-}
 void MAVLINK_MSG_ID_VFR_HUD_ACTION(mavlink_message_t MAVLinkMsg)
 {
     mavlink_vfr_hud_t vfr_hud;
@@ -253,7 +306,7 @@ void MAVLINK_MSG_ID_VFR_HUD_ACTION(mavlink_message_t MAVLinkMsg)
 void MAVLINK_MSG_FLIGHT_NUM_MSG_ACTION(mavlink_message_t MAVLinkMsg)
 {
 
-    mavlink_msg_flight_num_msg_get_flight_num(&MAVLinkMsg, flynum);
+    //mavlink_msg_flight_num_msg_get_flight_num(&MAVLinkMsg, flynum);
 }
 
 double deg2rad(double deg) // 度转弧度
@@ -282,6 +335,7 @@ double distance(double lat1, double lon1, double lat2, double lon2) // 计算两
     return distance * 1000;
 }
 
+//解析获取GPS原始经纬度数据_lat_lon
 void MAVLINK_MSG_ID_GPS_RAW_INT_ACTION(mavlink_message_t MAVLinkMsg)
 {
     mavlink_gps_raw_int_t gps_raw_int;
@@ -314,3 +368,138 @@ void MAVLINK_MSG_ID_GPS_RAW_INT_ACTION(mavlink_message_t MAVLinkMsg)
         fdistance = fdistance + dis;
     }
 }
+//解析获取飞控原始通道控制输出值_rc_roll_yaw_pitch_throttle
+void MAVLINK_MSG_ID_ACTUATOR_OUTPUT_STATUS_ACTION(mavlink_message_t MAVLinkMsg)
+{
+		mavlink_actuator_output_status_t actuator_output_data;
+		mavlink_msg_actuator_output_status_decode(&MAVLinkMsg, &actuator_output_data);
+		
+		for(int i = 0;	i<8;	i++){
+			pTrackInfo.vehicle_control[i] = actuator_output_data.actuator[i];
+		}	
+}
+
+//解析获取飞控姿态四元数_q
+void MAVLINK_MSG_ID_ATTITUDE_QUATERNION_ACTION(mavlink_message_t MAVLinkMsg)
+{
+		mavlink_attitude_quaternion_t attitude_quaternion_data;
+		mavlink_msg_attitude_quaternion_decode(&MAVLinkMsg, &attitude_quaternion_data);
+		
+		pTrackInfo.vehicle_q[0] = attitude_quaternion_data.q1;
+		pTrackInfo.vehicle_q[1] = attitude_quaternion_data.q2;
+		pTrackInfo.vehicle_q[2] = attitude_quaternion_data.q3;
+		pTrackInfo.vehicle_q[3] = attitude_quaternion_data.q4;
+		
+}
+//解析获取飞机高度信息_alt_vx_vy_vz
+void MAVLINK_MSG_ID_LOCAL_POSITION_NED_ACTION(mavlink_message_t MAVLinkMsg)
+{
+    mavlink_local_position_ned_t local_position_ned;
+    mavlink_msg_local_position_ned_decode(&MAVLinkMsg, &local_position_ned);
+
+    pTrackInfo.alt = -(double)local_position_ned.z;
+	
+		pTrackInfo.vehicle_vx = local_position_ned.vx;
+		pTrackInfo.vehicle_vy =	local_position_ned.vy;
+		pTrackInfo.vehicle_vz = local_position_ned.vz;
+		
+}
+
+//解析获取电调信息_rpm_voltage_current
+void MAVLINK_MSG_ID_ESC_STATUS_ACTION(mavlink_message_t MAVLinkMsg)
+{
+    mavlink_esc_status_t esc_status_data;
+    mavlink_msg_esc_status_decode(&MAVLinkMsg, &esc_status_data);
+		
+		if(esc_status_data.index == 0 && esc_rec_finish){
+				for(int i = 0 ; i < 4 ; i++ ){
+						pTrackInfo.esc_rpm[i] = esc_status_data.rpm[i];
+						pTrackInfo.esc_voltage[i] = esc_status_data.voltage[i];
+						pTrackInfo.esc_current[i] = esc_status_data.current[i];
+				}
+				esc_rec_finish = false;
+		}
+		else if(esc_status_data.index == 4 && !esc_rec_finish){
+				for(int i = 4 ; i < 8 ; i++ ){
+						pTrackInfo.esc_rpm[i] = esc_status_data.rpm[i-4];
+						pTrackInfo.esc_voltage[i] = esc_status_data.voltage[i-4];
+						pTrackInfo.esc_current[i] = esc_status_data.current[i-4];
+				}
+				esc_rec_finish = true;
+		}
+
+}
+
+//解析获取电调信息_temperature_errorcnt
+void MAVLINK_MSG_ID_ESC_INFO_ACTION(mavlink_message_t MAVLinkMsg)
+{
+    mavlink_esc_info_t esc_info_data;
+    mavlink_msg_esc_info_decode(&MAVLinkMsg, &esc_info_data);
+		
+		if(esc_info_data.index == 0 && escif_rec_finish){
+				for(int i = 0 ; i < 4 ; i++ ){
+					pTrackInfo.esc_temple[i] = esc_info_data.temperature[i] / 100.f;
+					pTrackInfo.esc_errorcount[i] = esc_info_data.error_count[i];
+				}
+				escif_rec_finish = false;
+		}
+		else if(esc_info_data.index == 4 && !escif_rec_finish){
+				for(int i = 4 ; i < 8 ; i++ ){
+					pTrackInfo.esc_temple[i] = esc_info_data.temperature[i-4] / 100.f;
+					pTrackInfo.esc_errorcount[i] = esc_info_data.error_count[i-4];
+				}
+				escif_rec_finish = true;
+		}
+}	
+
+//解析获取飞控输入信息_rc_roll_pitch_yaw_throttle
+void MAVLINK_MSG_ID_RC_CHANNELS_ACTION(mavlink_message_t MAVLinkMsg)
+{
+    mavlink_rc_channels_t rc_channels_data;
+    mavlink_msg_rc_channels_decode(&MAVLinkMsg, &rc_channels_data);
+	
+		pTrackInfo.rc_roll = rc_channels_data.chan10_raw;
+		pTrackInfo.rc_throttle = rc_channels_data.chan11_raw;
+		pTrackInfo.rc_pitch = rc_channels_data.chan12_raw;
+		pTrackInfo.rc_yaw = rc_channels_data.chan13_raw;
+}
+
+//解析获取电池状态信息_battery
+void MAVLINK_MSG_ID_BATTERY_STATUS_ACTION(mavlink_message_t MAVLinkMsg)
+{
+		mavlink_battery_status_t battery_status_data;
+    mavlink_msg_battery_status_decode(&MAVLinkMsg, &battery_status_data);
+		//float temp_voltage_v = (float)(battery_status_data.voltages[1]/1000) + (float)((battery_status_data.voltages[1]/100)%10);
+		pTrackInfo.voltage_v = (battery_status_data.voltages[1]+65534) /1000.f;
+		pTrackInfo.current_a = battery_status_data.current_battery / 100.f;
+		pTrackInfo.remaining = battery_status_data.battery_remaining ;
+		pTrackInfo.time_remaining_s = battery_status_data.time_remaining;
+		pTrackInfo.temperature = battery_status_data.temperature / 100.f;
+	
+}
+
+//解析获取的请求执行导航模式命令
+void MAVLINK_MSG_ID_MANUAL_CONTROL_ACTION(mavlink_message_t MAVLinkMsg)
+{
+	mavlink_manual_control_t manual_control_data;
+	mavlink_msg_manual_control_decode(&MAVLinkMsg, &manual_control_data);
+	pTrackInfo.nav_state_requset = manual_control_data.buttons;
+}
+
+//解析获取的真实执行导航模式命令
+void MAVLINK_MSG_ID_CURRENT_MODE_ACTION(mavlink_message_t MAVLinkMsg)
+{
+	mavlink_current_mode_t current_mode_data;
+	mavlink_msg_current_mode_decode(&MAVLinkMsg, &current_mode_data);
+	pTrackInfo.nav_state_current = current_mode_data.custom_mode;
+}
+
+//解析获取飞控发送的utc时间
+void MAVLINK_MSG_ID_SYSTEM_TIME_ACTION(mavlink_message_t MAVLinkMsg)
+{
+	mavlink_system_time_t system_time_data;
+	mavlink_msg_system_time_decode(&MAVLinkMsg, &system_time_data);
+	pTrackInfo.utc_sec = system_time_data.time_unix_usec/1e6;
+}
+
+

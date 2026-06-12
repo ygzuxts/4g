@@ -10,20 +10,20 @@
       <TargetName>4GCatModule</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARMCC</pCCUsed>
+      <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARM5.06</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
-          <Device>STM32F407VGTx</Device>
+          <Device>STM32F407VETx</Device>
           <Vendor>STMicroelectronics</Vendor>
           <PackID>Keil.STM32F4xx_DFP.2.9.0</PackID>
           <PackURL>http://www.keil.com/pack</PackURL>
-          <Cpu>IRAM(0x20000000-0x2001BFFF) IRAM2(0x2001C000-0x2001FFFF) IROM(0x8000000-0x80FFFFF)  CLOCK(25000000) FPU2 CPUTYPE("Cortex-M4")</Cpu>
+          <Cpu>IRAM(0x20000000,0x00020000) IRAM2(0x10000000,0x00010000) IROM(0x08000000,0x00080000) CPUTYPE("Cortex-M4") FPU2 CLOCK(12000000) ELITTLE</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
-          <FlashDriverDll></FlashDriverDll>
-          <DeviceId></DeviceId>
-          <RegisterFile></RegisterFile>
+          <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0STM32F4xx_512 -FS08000000 -FL080000 -FP0($$Device:STM32F407VETx$CMSIS\Flash\STM32F4xx_512.FLM))</FlashDriverDll>
+          <DeviceId>0</DeviceId>
+          <RegisterFile>$$Device:STM32F407VETx$Drivers\CMSIS\Device\ST\STM32F4xx\Include\stm32f4xx.h</RegisterFile>
           <MemoryEnv></MemoryEnv>
           <Cmp></Cmp>
           <Asm></Asm>
@@ -33,7 +33,7 @@
           <SLE66CMisc></SLE66CMisc>
           <SLE66AMisc></SLE66AMisc>
           <SLE66LinkerMisc></SLE66LinkerMisc>
-          <SFDFile>$$Device:STM32F407VGTx$CMSIS\SVD\STM32F40x.svd</SFDFile>
+          <SFDFile>$$Device:STM32F407VETx$CMSIS\SVD\STM32F40x.svd</SFDFile>
           <bCustSvd>0</bCustSvd>
           <UseEnv>0</UseEnv>
           <BinPath></BinPath>
@@ -58,7 +58,7 @@
           <ListingPath></ListingPath>
           <HexFormatSelection>1</HexFormatSelection>
           <Merge32K>0</Merge32K>
-          <CreateBatchFile>0</CreateBatchFile>
+          <CreateBatchFile>1</CreateBatchFile>
           <BeforeCompile>
             <RunUserProg1>0</RunUserProg1>
             <RunUserProg2>0</RunUserProg2>
@@ -80,7 +80,7 @@
             <nStopB2X>0</nStopB2X>
           </BeforeMake>
           <AfterMake>
-            <RunUserProg1>1</RunUserProg1>
+            <RunUserProg1>0</RunUserProg1>
             <RunUserProg2>0</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
@@ -110,11 +110,11 @@
         </CommonProperty>
         <DllOption>
           <SimDllName>SARMCM3.DLL</SimDllName>
-          <SimDllArguments>-REMAP -MPU</SimDllArguments>
+          <SimDllArguments> -REMAP -MPU</SimDllArguments>
           <SimDlgDll>DCM.DLL</SimDlgDll>
           <SimDlgDllArguments>-pCM4</SimDlgDllArguments>
           <TargetDllName>SARMCM3.DLL</TargetDllName>
-          <TargetDllArguments>-MPU</TargetDllArguments>
+          <TargetDllArguments> -MPU</TargetDllArguments>
           <TargetDlgDll>TCM.DLL</TargetDlgDll>
           <TargetDlgDllArguments>-pCM4</TargetDlgDllArguments>
         </DllOption>
@@ -186,6 +186,7 @@
             <RvdsVP>2</RvdsVP>
             <RvdsMve>0</RvdsMve>
             <RvdsCdeCp>0</RvdsCdeCp>
+            <nBranchProt>0</nBranchProt>
             <hadIRAM2>1</hadIRAM2>
             <hadIROM2>0</hadIROM2>
             <StupSel>8</StupSel>
@@ -194,7 +195,7 @@
             <uLtcg>0</uLtcg>
             <nSecure>0</nSecure>
             <RoSelD>3</RoSelD>
-            <RwSelD>3</RwSelD>
+            <RwSelD>4</RwSelD>
             <CodeSel>0</CodeSel>
             <OptFeed>0</OptFeed>
             <NoZi1>0</NoZi1>
@@ -211,7 +212,7 @@
             <Ra2Chk>0</Ra2Chk>
             <Ra3Chk>0</Ra3Chk>
             <Im1Chk>1</Im1Chk>
-            <Im2Chk>1</Im2Chk>
+            <Im2Chk>0</Im2Chk>
             <OnChipMemories>
               <Ocm1>
                 <Type>0</Type>
@@ -246,12 +247,12 @@
               <IRAM>
                 <Type>0</Type>
                 <StartAddress>0x20000000</StartAddress>
-                <Size>0x1c000</Size>
+                <Size>0x20000</Size>
               </IRAM>
               <IROM>
                 <Type>1</Type>
                 <StartAddress>0x8000000</StartAddress>
-                <Size>0x100000</Size>
+                <Size>0x80000</Size>
               </IROM>
               <XRAM>
                 <Type>0</Type>
@@ -276,7 +277,7 @@
               <OCR_RVCT4>
                 <Type>1</Type>
                 <StartAddress>0x8000000</StartAddress>
-                <Size>0x100000</Size>
+                <Size>0x80000</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
                 <Type>1</Type>
@@ -301,12 +302,12 @@
               <OCR_RVCT9>
                 <Type>0</Type>
                 <StartAddress>0x20000000</StartAddress>
-                <Size>0x1c000</Size>
+                <Size>0x20000</Size>
               </OCR_RVCT9>
               <OCR_RVCT10>
                 <Type>0</Type>
-                <StartAddress>0x2001c000</StartAddress>
-                <Size>0x4000</Size>
+                <StartAddress>0x10000000</StartAddress>
+                <Size>0x10000</Size>
               </OCR_RVCT10>
             </OnChipMemories>
             <RvctStartVector></RvctStartVector>
@@ -1720,6 +1721,61 @@
               <FileName>mavlink_msg_wind_cov.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_wind_cov.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_available_modes.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_available_modes.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_available_modes_monitor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_available_modes_monitor.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_battery_info.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_battery_info.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_camera_thermal_range.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_camera_thermal_range.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_component_information_basic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_component_information_basic.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_current_mode.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_current_mode.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_fuel_status.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_fuel_status.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_illuminator_status.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_illuminator_status.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_open_drone_id_arm_status.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_open_drone_id_arm_status.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_open_drone_id_system_update.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_open_drone_id_system_update.h</FilePath>
+            </File>
+            <File>
+              <FileName>mavlink_msg_param_error.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Middlewares\Mavlink\common\mavlink_msg_param_error.h</FilePath>
             </File>
           </Files>
         </Group>

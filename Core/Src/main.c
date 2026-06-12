@@ -31,6 +31,8 @@
 #include "task_log.h"
 #include "bsp_led.h"
 #include "bsp_Flash.h"
+#include "track_queue.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,6 +45,7 @@ extern bool usrMoudleInintSuccess;
 extern char sn[20];
 extern fifo_t mavlink_uart_rx_fifo;
 extern uint8_t mavlink_uart_rx_buf[MAVLINK_UART_RX_BUFFER_SIZE];
+extern TrackInfo pTrackInfo;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -116,25 +119,29 @@ int main(void)
     cJSONhooks_freeRTOS.free_fn = vPortFree;
     cJSON_InitHooks(&cJSONhooks_freeRTOS);
 
-    HAL_Delay(5000); // 等待4G模块和飞控上电
-    while (sn[0] == 0)
+    HAL_Delay(2000); // 等待4G模块和飞控上电
+		printf("sys start1 -------------\r\n");
+//		strcpy(sn ,"123456789");
+//		printf("sn set = %s\r\n",sn);
+    while (sn[0] == 0 || !(pTrackInfo.utc_sec > 1000 && pTrackInfo.utc_sec < 1803981121))
     {
         malvlink_serial_num_request_send();
         update();
-        HAL_Delay(100);
+        HAL_Delay(10);
     }
-    printf("sn is %s\r\n", sn);
+//    printf("sn is %s\r\n", sn);
     SetLEDState(2, 2);
+		printf("sys start2 -------------\r\n");
 
-    if (Flash_Read())
-    {
-        while (usrMoudle_Init())
-            ; // 初始化4G模块
-        Flash_Write();
-        HAL_Delay(10000); // 等待4G模块保存参数重启
-    }
+    while (usrMoudle_Init())
+        ; // 初始化4G模块
+    HAL_Delay(10000); // 等待4G模块保存参数重启
 
-    printf("4G Cat Config Success\r\n");
+    pTrackInfo.day_job_id = Flash_DailyCounter_Init_Inc_And_Save(pTrackInfo.utc_sec);	//读取flash存储的任务ID号，并判断是否需要重置
+    
+		//printf("Boot daily counter = %lu, utc_time: %lu\r\n", (unsigned long) pTrackInfo.day_job_id,(unsigned long)pTrackInfo.utc_sec);
+				
+		printf("4G Cat Config Success\r\n");
     usrMoudleInintSuccess = true;
 
     SetLEDState(3, 2); // 自检通过
@@ -143,7 +150,7 @@ int main(void)
 
     /* Call init function for freertos objects (in cmsis_os2.c) */
     MX_FREERTOS_Init();
-
+		printf("sys start3 -------------\r\n");
     /* Start scheduler */
     osKernelStart();
 

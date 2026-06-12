@@ -2,6 +2,7 @@
 #define __BSP_FLASH_H
 
 #include "stm32f4xx.h"
+#include <stdint.h>
 
 // Base address of the Flash sectors
 #define ADDR_FLASH_SECTOR_0 ((uint32_t)0x08000000)  // 扇区0起始地址 16 Kbytes
@@ -19,5 +20,10 @@
 
 int Flash_Write(void);
 int Flash_Read(void);
+
+uint32_t Flash_DailyCounter_Init_Inc_And_Save(uint64_t utc_sec);
+void Flash_write(uint32_t nmu);
+int Flash_DailyCounter_ReadLast(uint32_t *day_out, uint32_t *counter_out);
+int Flash_DailyCounter_Clear(void);
 
 #endif

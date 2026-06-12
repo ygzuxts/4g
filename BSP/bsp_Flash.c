@@ -1,148 +1,245 @@
+/**
+  ******************************************************************************
+  * @file    bsp_Flash.c
+  * @brief   STM32F407 Sector11 Flash persistence:
+  *          Store daily-unique TaskID boot sequence using append-only records.
+  *
+  * 功能：
+  *  - 同一天内每次启动生成不同 TaskID（boot_seq 自增）
+  *  - 第二天（UTC day变化）自动重置 boot_seq
+  *  - 数据存储在内部 Flash Sector11，采用追加记录方式，写满后再擦除
+  *
+  * TaskID 格式（64位）：
+  *   task_id = ( (uint64_t)utc_day << 32 ) | boot_seq
+  *
+  * 依赖：
+  *  - 你工程中的 bsp_Flash.h 定义了 ADDR_FLASH_SECTOR_0..11
+  *  - 使用 STM32 HAL 的 Flash 编程接口
+  *
+  ******************************************************************************
+  */
+
 #include "bsp_Flash.h"
 #include "stdio.h"
 #include "usart_debug.h"
+#include "stm32f4xx_hal.h"
+#include <stdint.h>
 
-#define DATA_32 ((uint32_t)0x12345678)
+/* ========================= 用户可配置区 ========================= */
 
-#define FLASH_TIMEOUT_VALUE 1000
-#define FLASH_USER_START_ADDR ADDR_FLASH_SECTOR_11 // 要擦除内部FLASH的起始地址
-#define FLASH_USER_END_ADDR ADDR_FLASH_SECTOR_11   // 要擦除内部FLASH的结束地址
+/* 选择用于存储的扇区：这里固定使用 Sector11 */
+#define FLASH_USER_START_ADDR   ADDR_FLASH_SECTOR_11
+#define FLASH_USER_SECTOR       FLASH_SECTOR_11
 
-static uint32_t GetSector(uint32_t Address);
+/* F407 Sector11 通常为 128KB（S5~S11 为 128KB），如你芯片/布局不同请调整 */
+#define FLASH_USER_SECTOR_SIZE  (128u * 1024u)
 
-// 对内部FLASH进行读写测试
-int Flash_Write(void)
+/* 超时（保留你的定义） */
+#define FLASH_TIMEOUT_VALUE     1000u
+
+/* ======================= TaskID 记录定义 ======================== */
+
+#define DCREC_MAGIC   ((uint32_t)0x44434E54u)   /* 'DCNT' */
+#define DCREC_EMPTY   ((uint32_t)0xFFFFFFFFu)
+
+typedef struct {
+    uint32_t magic;
+    uint32_t day;     /* UTC day = utc_sec / 86400 */
+    uint32_t counter;     /* boot sequence within day, start from 1 */
+    uint32_t check;   /* simple xor check */
+} dcrec_t;
+
+/* ========================= 内部静态函数 ========================= */
+
+static uint32_t dcrec_check(const dcrec_t *r)
 {
-    // 要擦除的起始扇区(包含)及结束扇区(不包含)，如8-12，表示擦除8、9、10、11扇区
-    uint32_t FirstSector = 0;
-    uint32_t NbOfSectors = 0;
-    HAL_StatusTypeDef FlashStatus = HAL_OK;
-    uint32_t SECTORError = 0;
+    return (r->magic ^ r->day ^ r->counter ^ 0x5A5A5A5Au);
+}
 
-    uint32_t Address = 0;
+static int dcrec_is_empty(const dcrec_t *r)
+{
+    return (r->magic   == DCREC_EMPTY &&
+            r->day     == DCREC_EMPTY &&
+            r->counter == DCREC_EMPTY &&
+            r->check   == DCREC_EMPTY);
+}
 
-    __IO uint32_t Data32 = 0;
-    __IO uint32_t MemoryProgramStatus = 0;
-    static FLASH_EraseInitTypeDef EraseInitStruct;
-    int trycnt = 0;
-    // FLASH 解锁使能访问FLASH控制寄存器
+static int dcrec_is_valid(const dcrec_t *r)
+{
+    if (r->magic != DCREC_MAGIC) return 0;
+    return (r->check == dcrec_check(r));
+}
+
+static uint32_t utc_sec_to_day(uint64_t utc_sec)
+{
+    return (uint32_t)(utc_sec / 86400ULL);
+}
+
+static int flash_erase_user_sector(void)
+{
+    HAL_StatusTypeDef st;
+    uint32_t sector_error = 0;
+    FLASH_EraseInitTypeDef erase = {0};
+
     HAL_FLASH_Unlock();
 
-    FirstSector = GetSector(FLASH_USER_START_ADDR);
-    NbOfSectors = 1;
+    erase.TypeErase    = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+    erase.Sector       = FLASH_USER_SECTOR;
+    erase.NbSectors    = 1;
 
-    // 擦除用户区域 (用户区域指程序本身没有使用的空间，可以自定义)
-    EraseInitStruct.TypeErase = FLASH_TYPEERASE_SECTORS;
-    EraseInitStruct.VoltageRange = FLASH_VOLTAGE_RANGE_3; // 以“字”的大小进行操作
-    EraseInitStruct.Sector = FirstSector;
-    EraseInitStruct.NbSectors = NbOfSectors;
-    // 开始擦除操作
-    do
-    {
-        FlashStatus = HAL_FLASHEx_Erase(&EraseInitStruct, &SECTORError);
-        if (FlashStatus != HAL_OK)
-        {
-            /* Infinite loop */
-            trycnt++;
-            if (trycnt > 3)
-            {
-                HAL_FLASH_Lock();
-                return FlashStatus;
-            }
+    st = HAL_FLASHEx_Erase(&erase, &sector_error);
+
+    HAL_FLASH_Lock();
+    return (st == HAL_OK) ? 0 : -1;
+}
+
+/* 在 Sector11 中找到下一条可写地址（追加写） */
+static uint32_t dcrec_find_next_addr(void)
+{
+    uint32_t addr = FLASH_USER_START_ADDR;
+    uint32_t end  = FLASH_USER_START_ADDR + FLASH_USER_SECTOR_SIZE;
+
+    while (addr + sizeof(dcrec_t) <= end) {
+        const dcrec_t *r = (const dcrec_t *)addr;
+        if (dcrec_is_empty(r)) {
+            return addr;
         }
-        else
+        addr += sizeof(dcrec_t);
+    }
+    return 0; /* 写满 */
+}
+
+/* 读取最后一条有效记录 */
+static int dcrec_read_last(dcrec_t *out)
+{
+    uint32_t addr = FLASH_USER_START_ADDR;
+    uint32_t end  = FLASH_USER_START_ADDR + FLASH_USER_SECTOR_SIZE;
+
+    dcrec_t last_valid;
+    int found = 0;
+
+    while (addr + sizeof(dcrec_t) <= end) {
+        const dcrec_t *r = (const dcrec_t *)addr;
+
+        if (dcrec_is_empty(r)) {
             break;
-        FLASH_WaitForLastOperation((uint32_t)FLASH_TIMEOUT_VALUE);
-    } while (trycnt < 3);
+        }
 
-    Address = FLASH_USER_START_ADDR; // 以“字”的大小为单位写入数据
+        if (dcrec_is_valid(r)) {
+            last_valid = *r;
+            found = 1;
+        }
 
-    if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, Address, DATA_32) == HAL_OK)
-    {
-        // 给FLASH上锁，防止内容被篡改
-        HAL_FLASH_Lock();
+        addr += sizeof(dcrec_t);
+    }
+
+    if (found && out) {
+        *out = last_valid;
         return 0;
     }
-    else
-    {
-        HAL_FLASH_Lock();
-        printf("Write Error\r\n");
+    return -1;
+}
+
+/* 追加写入一条记录（16字节，4个word写入） */
+static int dcrec_append(const dcrec_t *rec)
+{
+    uint32_t addr = dcrec_find_next_addr();
+    if (addr == 0) {
+        if (flash_erase_user_sector() != 0) {
+            printf("erase user sector failed\r\n");
+            return -1;
+        }
+        addr = FLASH_USER_START_ADDR;
+    }
+
+    HAL_FLASH_Unlock();
+
+    const uint32_t *w = (const uint32_t *)rec;
+    for (uint32_t i = 0; i < (sizeof(dcrec_t) / 4); i++) {
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr + i * 4, w[i]) != HAL_OK) {
+            HAL_FLASH_Lock();
+            printf("flash program failed @0x%08lx\r\n", (unsigned long)(addr + i * 4));
+            return -1;
+        }
+    }
+
+    HAL_FLASH_Lock();
+    return 0;
+}
+
+/* ========================= 对外功能接口 ========================= */
+
+/**
+ * @brief  启动初始化：读取上次值 -> 判断是否新一天 -> counter++ -> 写回
+ * @param  utc_sec: 当前 UTC 秒（建议 GNSS 或 RTC 校准后的 Unix time）
+ * @retval 当前启动后的 counter 值（已自增并写入）
+ */
+uint32_t Flash_DailyCounter_Init_Inc_And_Save(uint64_t utc_sec)
+{
+    uint32_t day_now = utc_sec_to_day(utc_sec);
+
+    dcrec_t last;
+    uint32_t last_day = day_now;
+    uint32_t counter = 0;
+
+    if (dcrec_read_last(&last) == 0) {
+        last_day = last.day;
+        counter  = last.counter;
+    }
+
+    /* 新的一天：重置 */
+    if (day_now != last_day) {
+        counter = 0;
+    }
+
+    /* 本次启动自增 */
+    //counter++;
+
+    dcrec_t rec;
+    rec.magic   = DCREC_MAGIC;
+    rec.day     = day_now;
+    //rec.counter = counter;
+    rec.check   = dcrec_check(&rec);
+
+//    if (dcrec_append(&rec) != 0) {
+//        printf("DailyCounter save failed\r\n");
+//        /* 写失败也返回自增后的值，但不会持久化 */
+//    }
+
+    return counter;
+}
+
+void Flash_write(uint32_t nmu){
+    dcrec_t Rec;
+    Rec.magic   = DCREC_MAGIC;
+    Rec.counter = nmu;
+    Rec.check   = dcrec_check(&Rec);
+
+    if (dcrec_append(&Rec) != 0) {
+        printf("DailyCounter save failed\r\n");
+        /* 写失败也返回自增后的值，但不会持久化 */
+    }
+}
+
+int Flash_DailyCounter_ReadLast(uint32_t *day_out, uint32_t *counter_out)
+{
+    dcrec_t last;
+    if (dcrec_read_last(&last) != 0) {
         return -1;
     }
+    if (day_out) *day_out = last.day;
+    if (counter_out) *counter_out = last.counter;
+    return 0;
 }
 
-int Flash_Read(void)
+int Flash_DailyCounter_Clear(void)
 {
-    // 从FLASH中读取出数据进行校验
-    // MemoryProgramStatus = 0: 写入的数据正确
-    // MemoryProgramStatus != 0: 写入的数据错误，其值为错误的个数
-    uint32_t Address = 0;
-    __IO uint32_t Data32 = 0;
-    Address = FLASH_USER_START_ADDR;
-
-    Data32 = *(__IO uint32_t *)Address;
-
-    if (Data32 != DATA_32)
-    {
-        return -1;
-    }
-    else // 数据校验正确
-    {
-        return 0;
-    }
+    return flash_erase_user_sector();
 }
-// 根据输入的地址给出它所在的sector
-static uint32_t GetSector(uint32_t Address)
-{
-    uint32_t sector = 0;
 
-    if ((Address < ADDR_FLASH_SECTOR_1) && (Address >= ADDR_FLASH_SECTOR_0))
-    {
-        sector = FLASH_SECTOR_0;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_2) && (Address >= ADDR_FLASH_SECTOR_1))
-    {
-        sector = FLASH_SECTOR_1;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_3) && (Address >= ADDR_FLASH_SECTOR_2))
-    {
-        sector = FLASH_SECTOR_2;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_4) && (Address >= ADDR_FLASH_SECTOR_3))
-    {
-        sector = FLASH_SECTOR_3;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_5) && (Address >= ADDR_FLASH_SECTOR_4))
-    {
-        sector = FLASH_SECTOR_4;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_6) && (Address >= ADDR_FLASH_SECTOR_5))
-    {
-        sector = FLASH_SECTOR_5;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_7) && (Address >= ADDR_FLASH_SECTOR_6))
-    {
-        sector = FLASH_SECTOR_6;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_8) && (Address >= ADDR_FLASH_SECTOR_7))
-    {
-        sector = FLASH_SECTOR_7;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_9) && (Address >= ADDR_FLASH_SECTOR_8))
-    {
-        sector = FLASH_SECTOR_8;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_10) && (Address >= ADDR_FLASH_SECTOR_9))
-    {
-        sector = FLASH_SECTOR_9;
-    }
-    else if ((Address < ADDR_FLASH_SECTOR_11) && (Address >= ADDR_FLASH_SECTOR_10))
-    {
-        sector = FLASH_SECTOR_10;
-    }
-    else
-    {
-        sector = FLASH_SECTOR_11;
-    }
-    return sector;
-}
+
+
+
+
+

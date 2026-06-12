@@ -29,76 +29,76 @@ char *_sys_command_string(char *cmd, int len)
     return NULL;
 }
 
-// FILE 在 stdio.h里面定义.
+// FILE �? stdio.h里面定义.
 FILE __stdout;
 // 重定义fputc函数
 int fputc(int ch, FILE *f)
 {
-    while ((USART1->SR & 0X40) == 0)
-        ; // 循环发送,直到发送完毕
-    USART1->DR = (uint8_t)ch;
+    while ((USART3->SR & 0X40) == 0)
+        ; // �?�?发�?,直到发送完�?
+    USART3->DR = (uint8_t)ch;
     return ch;
 }
 
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart3;
 
-/* USART1 init function */
+/* USART3 init function */
 
-void MX_USART1_UART_Init(void)
+void MX_USART3_UART_Init(void)
 {
 
-    /* USER CODE BEGIN USART1_Init 0 */
-    /* USER CODE BEGIN USART1_MspInit 0 */
+    /* USER CODE BEGIN USART3_Init 0 */
+    /* USER CODE BEGIN USART3_MspInit 0 */
 
-    /* USER CODE END USART1_MspInit 0 */
-    /* USART1 clock enable */
-    __HAL_RCC_USART1_CLK_ENABLE();
+    /* USER CODE END USART3_MspInit 0 */
+    /* USART3 clock enable */
+    __HAL_RCC_USART3_CLK_ENABLE();
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    /**USART1 GPIO Configuration
-    PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    /**USART3 GPIO Configuration
+    PA9     ------> USART3_TX
+    PA10     ------> USART3_RX
     */
     GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
+    GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-    /* USART1 interrupt Init */
-//    HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
-//    HAL_NVIC_EnableIRQ(USART1_IRQn);
-    /* USER CODE END USART1_Init 0 */
+    /* USART3 interrupt Init */
+//    HAL_NVIC_SetPriority(USART3_IRQn, 5, 0);
+//    HAL_NVIC_EnableIRQ(USART3_IRQn);
+    /* USER CODE END USART3_Init 0 */
 
-    /* USER CODE BEGIN USART1_Init 1 */
+    /* USER CODE BEGIN USART3_Init 1 */
 
-    /* USER CODE END USART1_Init 1 */
-    huart1.Instance = USART1;
-    huart1.Init.BaudRate = 115200;
-    huart1.Init.WordLength = UART_WORDLENGTH_8B;
-    huart1.Init.StopBits = UART_STOPBITS_1;
-    huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX_RX;
-    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    HAL_UART_Init(&huart1);
-    /* USER CODE BEGIN USART1_Init 2 */
+    /* USER CODE END USART3_Init 1 */
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart3);
+    /* USER CODE BEGIN USART3_Init 2 */
 
-    /* USER CODE END USART1_Init 2 */
+    /* USER CODE END USART3_Init 2 */
 }
 
 /**
- * @brief This function handles USART1 global interrupt.
+ * @brief This function handles USART3 global interrupt.
  */
-void USART1_IRQHandler(void)
+void USART3_IRQHandler(void)
 {
-    /* USER CODE BEGIN USART1_IRQn 0 */
+    /* USER CODE BEGIN USART3_IRQn 0 */
 
-    /* USER CODE END USART1_IRQn 0 */
-    HAL_UART_IRQHandler(&huart1);
-    /* USER CODE BEGIN USART1_IRQn 1 */
+    /* USER CODE END USART3_IRQn 0 */
+    HAL_UART_IRQHandler(&huart3);
+    /* USER CODE BEGIN USART3_IRQn 1 */
 
-    /* USER CODE END USART1_IRQn 1 */
+    /* USER CODE END USART3_IRQn 1 */
 }
