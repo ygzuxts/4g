@@ -11,7 +11,7 @@
  * 默认保持原来的 MQTT 云平台模式。
  * 如果只想验证 4G 模块直连 NTRIP，把下面这一行改成 USR_MODULE_MODE_NTRIP。
  */
-#define USR_MODULE_WORK_MODE USR_MODULE_MODE_MQTT
+#define USR_MODULE_WORK_MODE USR_MODULE_MODE_NTRIP
 
 /*
  * NTRIP configuration source. Only change NTRIP_CONFIG_SOURCE:
