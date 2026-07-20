@@ -13,6 +13,7 @@ typedef struct _fifo {
 } fifo_t;
 
 extern fifo_t mavlink_uart_rx_fifo;
+extern volatile uint32_t mavlink_rx_byte_count;
 
 uint8_t fifo_read_ch(fifo_t* fifo, uint8_t* ch);
 uint8_t fifo_write_ch(fifo_t* fifo, uint8_t ch);

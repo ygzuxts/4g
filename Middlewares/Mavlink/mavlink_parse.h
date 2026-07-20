@@ -17,6 +17,7 @@
 extern fifo_t mavlink_uart_rx_fifo;
 
 extern mavlink_system_t mavlink_system;
+extern volatile uint32_t mavlink_rx_message_count;
 
 void update(void);
 void handleMessage(mavlink_message_t msg);

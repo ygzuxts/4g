@@ -3,7 +3,7 @@
 
 #include "stdio.h"
 #include "string.h"
-#include "cjson.h"
+#include "cJSON.h"
 #include "stdint.h"
 #include "stdbool.h"
 

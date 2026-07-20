@@ -8,6 +8,7 @@
 #define MAVLINK_UART_RX_BUFFER_SIZE 2048
 fifo_t mavlink_uart_rx_fifo;
 uint8_t mavlink_uart_rx_buf[MAVLINK_UART_RX_BUFFER_SIZE];
+volatile uint32_t mavlink_rx_byte_count = 0;
 /** @brief 读FIFO
  * @param fifo 待读缓冲区
  *        *ch   读到的数据
@@ -111,9 +112,9 @@ void USART2_IRQHandler(void)
     {
         HAL_UART_Receive(&huart2, &c, 1, 1000);
         fifo_write_ch(&mavlink_uart_rx_fifo, c);
+        mavlink_rx_byte_count++;
     }
 }
-
 
 
 

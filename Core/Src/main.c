@@ -23,7 +23,7 @@
 #include "mavlink_types.h"
 #include "mavlink_parse.h"
 #include "common.h"
-#include "cjson.h"
+#include "cJSON.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usart_debug.h"
@@ -31,7 +31,9 @@
 #include "task_log.h"
 #include "bsp_led.h"
 #include "bsp_Flash.h"
+#include "bsp_can.h"
 #include "track_queue.h"
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -46,10 +48,19 @@ extern char sn[20];
 extern fifo_t mavlink_uart_rx_fifo;
 extern uint8_t mavlink_uart_rx_buf[MAVLINK_UART_RX_BUFFER_SIZE];
 extern TrackInfo pTrackInfo;
+extern uint32_t ucRxCnt;
+extern uint8_t RxBuffer[1500];
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/*
+ * Debug only:
+ * 1 = do not wait for flight controller SN/time before initializing 4G/NTRIP.
+ *     Use this when testing the 4G module without the flight controller connected.
+ * 0 = normal product flow, wait until MAVLink provides SN and valid UTC time.
+ */
+#define DEBUG_BYPASS_MAVLINK_WAIT 0
 
 /* USER CODE END PD */
 
@@ -68,11 +79,17 @@ extern TrackInfo pTrackInfo;
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
+static void DBG_BOTH(const char *msg);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void DBG_BOTH(const char *msg)
+{
+    printf("%s", msg);
+    USART2_SendDebugText(msg);
+}
 
 /* USER CODE END 0 */
 
@@ -108,6 +125,19 @@ int main(void)
     MX_USART2_UART_Init();
     MX_USART3_UART_Init();
     Led_init();
+    DBG_BOTH("DBG: uart2/usart3 boot probe\r\n");
+    if (BSP_CAN1_Init() == HAL_OK)
+    {
+#if (BSP_CAN1_PINMAP == BSP_CAN1_PINMAP_PB8_PB9)
+        DBG_BOTH("DBG: can1 debug initialized PB8/PB9 1Mbps\r\n");
+#else
+        DBG_BOTH("DBG: can1 debug initialized PD0/PD1 1Mbps\r\n");
+#endif
+    }
+    else
+    {
+        DBG_BOTH("DBG: can1 debug init failed\r\n");
+    }
 
     /* USER CODE BEGIN 2 */
     fifo_init(&mavlink_uart_rx_fifo, mavlink_uart_rx_buf, MAVLINK_UART_RX_BUFFER_SIZE); // 初始化mavlink fifo
@@ -121,28 +151,102 @@ int main(void)
 
     HAL_Delay(2000); // 等待4G模块和飞控上电
 		printf("sys start1 -------------\r\n");
-//		strcpy(sn ,"123456789");
-//		printf("sn set = %s\r\n",sn);
-    while (sn[0] == 0 || !(pTrackInfo.utc_sec > 1000 && pTrackInfo.utc_sec < 1803981121))
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) && (NTRIP_CONFIG_SOURCE == NTRIP_CONFIG_SOURCE_QGC)
+    /* Disable any connection saved in the 4G module before waiting for FC data. */
+    USART2_ReportInfo("NTRIP: disabling old connection");
+    while (usrMoudle_PrepareForQgcNtrip())
     {
-        malvlink_serial_num_request_send();
+        BSP_CAN_SetDebugStatus(BSP_CAN_STATE_ERROR, 1, 0);
+        DBG_BOTH("DBG: failed to disable old NTRIP connection, retry\r\n");
+        USART2_ReportWarning("NTRIP: disable old connection failed");
+    }
+    /* Keep parsing MAVLink while AT+S saves settings and reboots the module. */
+    for (uint16_t reboot_wait = 0; reboot_wait < 1000; reboot_wait++)
+    {
         update();
         HAL_Delay(10);
     }
+    usrMoudleInintSuccess = false;
+    DBG_BOTH("DBG: old NTRIP connection disabled\r\n");
+#endif
+#if DEBUG_BYPASS_MAVLINK_WAIT
+    strcpy(sn, "123456789");
+    pTrackInfo.utc_sec = 1759127916;
+    DBG_BOTH("DBG: bypass mavlink sn/time wait for 4g test\r\n");
+#else
+    uint32_t wait_mavlink_cnt = 0;
+    char wait_debug[128];
+    DBG_BOTH("DBG: after 2s delay, waiting mavlink sn/time\r\n");
+    USART2_ReportInfo("NTRIP: waiting FC serial/time");
+    while (sn[0] == 0 || pTrackInfo.utc_sec < 1609459200ULL)
+    {
+        malvlink_serial_num_request_send();
+        update();
+        if (++wait_mavlink_cnt >= 500)
+        {
+            wait_mavlink_cnt = 0;
+            snprintf(wait_debug,
+                     sizeof(wait_debug),
+                     "DBG: mavlink wait bytes=%lu msgs=%lu fifo=%u sn=%s utc=%lu\r\n",
+                     (unsigned long)mavlink_rx_byte_count,
+                     (unsigned long)mavlink_rx_message_count,
+                     (unsigned int)serial_available(&mavlink_uart_rx_fifo),
+                     (sn[0] != 0) ? "ok" : "missing",
+                     (unsigned long)pTrackInfo.utc_sec);
+            DBG_BOTH(wait_debug);
+            USART2_ReportWarning("NTRIP: still waiting FC serial/time");
+        }
+        HAL_Delay(10);
+    }
+#endif
 //    printf("sn is %s\r\n", sn);
     SetLEDState(2, 2);
 		printf("sys start2 -------------\r\n");
+    DBG_BOTH("DBG: mavlink sn/time ok\r\n");
 
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) && (NTRIP_CONFIG_SOURCE == NTRIP_CONFIG_SOURCE_QGC)
+    /*
+     * QGC-controlled NTRIP mode: keep both saved sockets disabled at boot.
+     * The FreeRTOS task will configure and connect the module only after all
+     * fields and the APPLY packet have arrived from QGC.
+     */
+    DBG_BOTH("DBG: waiting for QGC NTRIP config\r\n");
+    USART2_ReportInfo("NTRIP: waiting for QGC config");
+#else
+    DBG_BOTH("DBG: init 4g module with compiled config\r\n");
+    USART2_ReportInfo("NTRIP: FC ready, starting 4G");
     while (usrMoudle_Init())
-        ; // 初始化4G模块
+    {
+        BSP_CAN_SetDebugStatus(BSP_CAN_STATE_ERROR, 1, 0);
+        DBG_BOTH("DBG: 4g init failed, retry\r\n");
+        USART2_ReportWarning("NTRIP: 4G init failed, retrying");
+    }
     HAL_Delay(10000); // 等待4G模块保存参数重启
+#endif
 
     pTrackInfo.day_job_id = Flash_DailyCounter_Init_Inc_And_Save(pTrackInfo.utc_sec);	//读取flash存储的任务ID号，并判断是否需要重置
     
 		//printf("Boot daily counter = %lu, utc_time: %lu\r\n", (unsigned long) pTrackInfo.day_job_id,(unsigned long)pTrackInfo.utc_sec);
 				
+#if !((USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) && (NTRIP_CONFIG_SOURCE == NTRIP_CONFIG_SOURCE_QGC))
 		printf("4G Cat Config Success\r\n");
+    DBG_BOTH("DBG: 4g config success\r\n");
+    USART2_ReportInfo("NTRIP: 4G configured");
+    BSP_CAN_SetDebugStatus(BSP_CAN_STATE_4G_CONFIGURED, 0, 0);
     usrMoudleInintSuccess = true;
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP)
+    ucRxCnt = 0;
+    memset(RxBuffer, 0, sizeof(RxBuffer));
+    Ntrip_SendRequest();
+    BSP_CAN_SetDebugStatus(BSP_CAN_STATE_NTRIP_REQUEST_SENT, 0, 0);
+    printf("NTRIP request sent\r\n");
+    DBG_BOTH("DBG: ntrip request sent\r\n");
+    USART2_ReportInfo("NTRIP: caster request sent");
+#endif
+#endif
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) && (NTRIP_CONFIG_SOURCE == NTRIP_CONFIG_SOURCE_QGC)
+    printf("4G Cat Ready - Waiting QGC NTRIP Config\r\n");
+#endif
 
     SetLEDState(3, 2); // 自检通过
 
@@ -151,6 +255,7 @@ int main(void)
     /* Call init function for freertos objects (in cmsis_os2.c) */
     MX_FREERTOS_Init();
 		printf("sys start3 -------------\r\n");
+    DBG_BOTH("DBG: freertos start\r\n");
     /* Start scheduler */
     osKernelStart();
 

@@ -5,6 +5,7 @@
 #include "stdint.h"
 #include "time.h"
 #include "track_queue.h"
+#include "usart_4gmoudle.h"
 
 #define PI 3.14159265358979323846
 #define RADIUS 6371 // 地球半径，单位为千米
@@ -25,6 +26,7 @@ uint8_t base_mode = 0;
 extern TrackInfo pTrackInfo;
 bool esc_rec_finish = true;
 bool escif_rec_finish = true;
+volatile uint32_t mavlink_rx_message_count = 0;
 
 // 定义 Unix 时间戳起始时间的年份
 #define UNIX_START_YEAR 1970
@@ -113,6 +115,7 @@ void update(void)
         // 从串口读到的数据中解析出每帧消息并写到结构体msg中
         if (mavlink_parse_char(chan, rxdata, &msg, &status))
         {
+            mavlink_rx_message_count++;
             handleMessage(msg); // 结构体成员赋值，有解析任务的回复信息
             break;
         }
@@ -148,6 +151,26 @@ void handleMessage(mavlink_message_t msg)
     case MAVLINK_MSG_ID_GPS_RAW_INT:
         MAVLINK_MSG_ID_GPS_RAW_INT_ACTION(msg);
         break;
+    case MAVLINK_MSG_ID_TUNNEL:
+    {
+        mavlink_tunnel_t tunnel;
+        mavlink_msg_tunnel_decode(&msg, &tunnel);
+
+        if (tunnel.payload_type == NTRIP_CONFIG_TUNNEL_PAYLOAD_TYPE &&
+            (tunnel.target_component == 0 || tunnel.target_component == MAV_COMP_ID_ONBOARD_COMPUTER) &&
+            tunnel.payload_length >= 3 &&
+            tunnel.payload[0] == NTRIP_CONFIG_PROTOCOL_VERSION)
+        {
+            uint8_t field = tunnel.payload[1];
+            uint8_t field_length = tunnel.payload[2];
+
+            if ((uint16_t)field_length + 3U <= tunnel.payload_length)
+            {
+                Ntrip_SetRemoteConfigField(field, &tunnel.payload[3], field_length);
+            }
+        }
+        break;
+    }
     case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
         MAVLINK_MSG_ID_AUTOPILOT_VERSION_ACTION(msg);
         break;
@@ -183,16 +206,41 @@ void handleMessage(mavlink_message_t msg)
 
 void malvlink_serial_num_request_send(void)
 {
-//    mavlink_message_t message_buf;
+    static uint32_t last_request_tick = 0;
+    uint32_t now = HAL_GetTick();
+    mavlink_message_t message;
+    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    uint16_t length;
 
-//    uint8_t preesure_buffer[13];
-//    uint16_t length = 0;
+    if ((now - last_request_tick) < 1000U)
+    {
+        return;
+    }
+    last_request_tick = now;
 
-//    // system_id、component_id随便设置，不影响发送，接收方自己能对号入座即可
-//    mavlink_msg_serial_number_request_pack_chan(mavlink_system.sysid, mavlink_system.compid, MAVLINK_COMM_0, &message_buf, 200, 0);
+    mavlink_msg_command_long_pack(1,
+                                  MAV_COMP_ID_ONBOARD_COMPUTER,
+                                  &message,
+                                  1,
+                                  MAV_COMP_ID_AUTOPILOT1,
+                                  MAV_CMD_REQUEST_MESSAGE,
+                                  0,
+                                  MAVLINK_MSG_ID_AUTOPILOT_VERSION,
+                                  0, 0, 0, 0, 0, 0);
+    length = mavlink_msg_to_send_buffer(buffer, &message);
+    USART2_SendMavlinkBytes(buffer, length);
 
-//    length = mavlink_msg_to_send_buffer(preesure_buffer, &message_buf);
-//    USART2_SendBytes(preesure_buffer, length);
+    mavlink_msg_command_long_pack(1,
+                                  MAV_COMP_ID_ONBOARD_COMPUTER,
+                                  &message,
+                                  1,
+                                  MAV_COMP_ID_AUTOPILOT1,
+                                  MAV_CMD_REQUEST_MESSAGE,
+                                  0,
+                                  MAVLINK_MSG_ID_SYSTEM_TIME,
+                                  0, 0, 0, 0, 0, 0);
+    length = mavlink_msg_to_send_buffer(buffer, &message);
+    USART2_SendMavlinkBytes(buffer, length);
 }
 void malvlink_heart_send(void)
 {
@@ -202,11 +250,11 @@ void malvlink_heart_send(void)
 
     uint16_t length = 0;
 
-    mavlink_msg_heartbeat_pack(1, 2, &message_buf, 1, 2, 3, 4, 5);
+    mavlink_msg_heartbeat_pack(1, MAV_COMP_ID_ONBOARD_COMPUTER, &message_buf, 1, 2, 3, 4, 5);
 
     length = mavlink_msg_to_send_buffer(heartbeat_buffer, &message_buf);
 
-    USART2_SendBytes(heartbeat_buffer, length);
+    USART2_SendMavlinkBytes(heartbeat_buffer, length);
 }
 
 // 解析mavlink 心跳包消息
@@ -501,5 +549,3 @@ void MAVLINK_MSG_ID_SYSTEM_TIME_ACTION(mavlink_message_t MAVLinkMsg)
 	mavlink_msg_system_time_decode(&MAVLinkMsg, &system_time_data);
 	pTrackInfo.utc_sec = system_time_data.time_unix_usec/1e6;
 }
-
-

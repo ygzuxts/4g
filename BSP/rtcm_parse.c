@@ -4,6 +4,7 @@
 #include "cmsis_os.h"
 #include "mavlink_parse.h"
 #include "usart_mavlink.h"
+#include "bsp_can.h"
 
 uint8_t _sequenceId = 0;
 mavlink_gps_rtcm_data_t gps_rtcm_data;
@@ -55,11 +56,24 @@ int min(int x, int y)
 // 向飞控传输RTCM数据
 void sendMessageToVehicle(const mavlink_gps_rtcm_data_t *msg)
 {
+    static bool mavlink_rtcm_reported = false;
+    static uint32_t mavlink_rtcm_count = 0;
     uint8_t rtcm_data_buffer[256];
+    char debug_buf[80];
     mavlink_message_t rtcm_msg_send;
-    mavlink_msg_gps_rtcm_data_encode(0, 0, &rtcm_msg_send, msg);
+    mavlink_msg_gps_rtcm_data_encode(1, MAV_COMP_ID_ONBOARD_COMPUTER, &rtcm_msg_send, msg);
     uint16_t len = mavlink_msg_to_send_buffer(rtcm_data_buffer, &rtcm_msg_send);
-    USART2_SendBytes(rtcm_data_buffer, len);
+    snprintf(debug_buf, sizeof(debug_buf), "DBG: rtcm mavlink ready payload=%u packet=%u\r\n", msg->len, len);
+    printf("%s", debug_buf);
+    USART2_SendDebugText(debug_buf);
+    USART2_SendMavlinkBytes(rtcm_data_buffer, len);
+    mavlink_rtcm_count++;
+    BSP_CAN_SetDebugStatus(BSP_CAN_STATE_RTCM_MAVLINK_SENT, 0, mavlink_rtcm_count);
+    if (!mavlink_rtcm_reported)
+    {
+        mavlink_rtcm_reported = true;
+        USART2_ReportInfo("NTRIP: RTCM MAVLink sent to PX4");
+    }
 }
 
 // 解析 RTCM 数据包
@@ -96,11 +110,22 @@ void process_rtcm_data(uint8_t *buffer, uint16_t length)
 
             if (calculated_crc == received_crc)
             {
-                printf("parse rtcm data successed\r\n");
+                static bool rtcm_crc_reported = false;
+                static uint32_t rtcm_frame_count = 0;
+                rtcm_frame_count++;
+                BSP_CAN_SetDebugStatus(BSP_CAN_STATE_RTCM_RECEIVED, 0, rtcm_frame_count);
+                printf("DBG: rtcm parsed ok total=%u payload=%u\r\n", total_length, payload_length);
+                USART2_SendDebugText("DBG: rtcm parsed ok\r\n");
+                if (!rtcm_crc_reported)
+                {
+                    rtcm_crc_reported = true;
+                    USART2_ReportInfo("NTRIP: RTCM received, CRC OK");
+                }
                 uint8_t *payload = pvPortMalloc(total_length + 1);
                 memcpy(payload, &buffer[i], total_length);
                 if (total_length < MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN)
                 {
+                    memset(&gps_rtcm_data, 0, sizeof(gps_rtcm_data));
                     gps_rtcm_data.len = total_length;
                     gps_rtcm_data.flags = (_sequenceId & 0x1F) << 3;
                     memcpy(gps_rtcm_data.data, payload, total_length);
@@ -110,14 +135,24 @@ void process_rtcm_data(uint8_t *buffer, uint16_t length)
                 {
                     uint8_t fragmentId = 0;
                     int start = 0;
-                    while (start < payload_length)
+                    while (start < total_length && fragmentId < 4)
                     {
-                        int length = min(payload_length - start, MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN);
-                        gps_rtcm_data.flags = (short)((fragmentId++ & 0x1F) | (length < MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN ? 0x20 : 0));
+                        int length = min(total_length - start, MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN);
+                        memset(&gps_rtcm_data, 0, sizeof(gps_rtcm_data));
+                        gps_rtcm_data.flags = 0x01; // LSB: fragmented message
+                        gps_rtcm_data.flags |= (fragmentId & 0x03) << 1;
+                        gps_rtcm_data.flags |= (_sequenceId & 0x1F) << 3;
                         gps_rtcm_data.len = length;
                         memcpy(gps_rtcm_data.data, &payload[start], length);
                         sendMessageToVehicle(&gps_rtcm_data);
                         start += length;
+                        fragmentId++;
+                    }
+
+                    if (start < total_length)
+                    {
+                        USART2_SendDebugText("DBG: rtcm frame exceeds mavlink 4-fragment limit\r\n");
+                        USART2_ReportWarning("NTRIP: RTCM frame exceeds 720 bytes");
                     }
                 }
                 vPortFree(payload);
