@@ -32,6 +32,7 @@
 #include "bsp_led.h"
 #include "bsp_Flash.h"
 #include "bsp_can.h"
+#include "mqtt_client.h"
 #include "track_queue.h"
 #include <string.h>
 
@@ -221,7 +222,11 @@ int main(void)
         DBG_BOTH("DBG: 4g init failed, retry\r\n");
         USART2_ReportWarning("NTRIP: 4G init failed, retrying");
     }
-    HAL_Delay(10000); // 等待4G模块保存参数重启
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+    HAL_Delay(20000);
+#else
+    HAL_Delay(10000);
+#endif
 #endif
 
     pTrackInfo.day_job_id = Flash_DailyCounter_Init_Inc_And_Save(pTrackInfo.utc_sec);	//读取flash存储的任务ID号，并判断是否需要重置
@@ -234,9 +239,13 @@ int main(void)
     USART2_ReportInfo("NTRIP: 4G configured");
     BSP_CAN_SetDebugStatus(BSP_CAN_STATE_4G_CONFIGURED, 0, 0);
     usrMoudleInintSuccess = true;
-#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP)
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) || (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
     ucRxCnt = 0;
     memset(RxBuffer, 0, sizeof(RxBuffer));
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+    MqttClient_Start(sn);
+    HAL_Delay(1000);
+#endif
     Ntrip_SendRequest();
     BSP_CAN_SetDebugStatus(BSP_CAN_STATE_NTRIP_REQUEST_SENT, 0, 0);
     printf("NTRIP request sent\r\n");

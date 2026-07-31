@@ -480,6 +480,16 @@
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_Flash.c</FilePath>
             </File>
+            <File>
+              <FileName>gm800_sdp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\gm800_sdp.c</FilePath>
+            </File>
+            <File>
+              <FileName>mqtt_client.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\mqtt_client.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

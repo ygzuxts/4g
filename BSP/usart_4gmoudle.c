@@ -33,6 +33,8 @@ static uint8_t uart_tx_buf[ATK_MW8266D_UART_TX_BUF_SIZE]; // USRMoudle UART发�
 #define NTRIP_DEFAULT_PORT 8103
 #define NTRIP_DEFAULT_MOUNT_POINT "RTCM33GRCEJ"
 #define NTRIP_DEFAULT_AUTH_BASIC "Y2F6ZDI3NDE6ZnV0dXJld2luZw=="
+#define MQTT_DEFAULT_HOST "47.112.204.68"
+#define MQTT_DEFAULT_PORT 1883
 
 #define NTRIP_HOST_MAX_LEN 63
 #define NTRIP_MOUNT_MAX_LEN 63
@@ -533,6 +535,56 @@ uint8_t usrMoudle_Init(void)
         usrmoudle_send_at_cmd("AT+UARTFL=4096\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+UARTFT=20\r\n", "OK", 2000);
         usrmoudle_send_at_cmd("AT+S\r\n", "OK", 2000);
+#elif (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+        /*
+         * 原来的 GM800 内置 MQTT 模式配置如下：
+         *
+         *   AT+WKMOD=MQTT,NOR
+         *   AT+MQTTSVR=47.112.204.68,1883
+         *   AT+MQTTUSER=antg!@211520
+         *   AT+MQTTPSW=admin
+         *   AT+MQTTCID=<sn>
+         *   AT+MQTTVER=4
+         *   AT+MQTTMOD=1
+         *   AT+MQTTPUBTP=1,1,/Job,0,0
+         *   AT+MQTTPUBTP=2,1,/Job/<sn>/4G,0,0
+         *   AT+MQTTSUBTP=1,1,/device/<sn>/4G,0
+         *   AT+MQTTSUBTP=2,1,/gps,0
+         *
+         * 现在为了和 NTRIP 并发，不再让 GM800 工作在 MQTT 模式。
+         * GM800 只工作在 NET + SDP 套接字分发：
+         *
+         *   Socket A -> NTRIP caster
+         *   Socket B -> MQTT broker
+         *
+         * MQTT CONNECT/PUBLISH/SUBSCRIBE/PING 报文由 STM32 在 mqtt_client.c
+         * 内按 MQTT 3.1.1 自己生成，然后通过 GM800_SdpSend(Socket B) 发出。
+         */
+        ntrip_debug_print_config("DBG: dual tcp ntrip config");
+        usrmoudle_send_at_cmd("AT+E=OFF\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+CPIN?\r\n", "READY", 2000);
+        usrmoudle_send_at_cmd("AT+CSQ\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+CEREG?\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+SYSINFO\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+WKMOD=NET\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+HEARTEN=OFF\r\n", "OK", 2000);
+
+        sprintf(EC_topic, "AT+SOCKA=TCP,%s,%u\r\n", ntrip_config.host, ntrip_config.port);
+        usrmoudle_send_at_cmd(EC_topic, "OK", 2000);
+        memset(EC_topic, 0, sizeof(EC_topic));
+        usrmoudle_send_at_cmd("AT+SOCKAEN=ON\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+SOCKASL=LONG\r\n", "OK", 2000);
+
+        sprintf(EC_topic, "AT+SOCKB=TCP,%s,%u\r\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
+        usrmoudle_send_at_cmd(EC_topic, "OK", 2000);
+        memset(EC_topic, 0, sizeof(EC_topic));
+        usrmoudle_send_at_cmd("AT+SOCKBEN=ON\r\n", "OK", 2000);
+
+        usrmoudle_send_at_cmd("AT+SDPEN=ON\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+RSTIM=0\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+UARTFL=4096\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+UARTFT=20\r\n", "OK", 2000);
+        usrmoudle_send_at_cmd("AT+S\r\n", "OK", 2000);
 #endif
 
         return 0;
@@ -547,6 +599,28 @@ uint8_t usrMoudle_Init(void)
 void Ntrip_SendRequest(void)
 {
     ntrip_debug_print_config("DBG: ntrip request");
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+    char request[512];
+    int len = snprintf(request,
+                       sizeof(request),
+                       "GET /%s HTTP/1.1\r\n"
+                       "Host: %s:%u\r\n"
+                       "Ntrip-Version: Ntrip/2.0\r\n"
+                       "User-Agent: NTRIP STM32Client/1.0\r\n"
+                       "%s%s%s"
+                       "Connection: keep-alive\r\n"
+                       "\r\n",
+                       ntrip_config.mountpoint,
+                       ntrip_config.host,
+                       ntrip_config.port,
+                       (ntrip_config.auth_basic[0] != '\0') ? "Authorization: Basic " : "",
+                       (ntrip_config.auth_basic[0] != '\0') ? ntrip_config.auth_basic : "",
+                       (ntrip_config.auth_basic[0] != '\0') ? "\r\n" : "");
+    if (len > 0 && len < (int)sizeof(request))
+    {
+        GM800_SdpSend(GM800_SOCKET_A_NTRIP, (const uint8_t *)request, (uint16_t)len);
+    }
+#else
     USRMoudle_uart_printf("GET /%s HTTP/1.1\r\n", ntrip_config.mountpoint);
     USRMoudle_uart_printf("Host: %s:%u\r\n", ntrip_config.host, ntrip_config.port);
     USRMoudle_uart_printf("Ntrip-Version: Ntrip/2.0\r\n");
@@ -557,6 +631,7 @@ void Ntrip_SendRequest(void)
     }
     USRMoudle_uart_printf("Connection: keep-alive\r\n");
     USRMoudle_uart_printf("\r\n");
+#endif
 }
 
 void Ntrip_SendGGA(double lat, double lon, uint64_t utc_sec)
@@ -617,7 +692,16 @@ void Ntrip_SendGGA(double lat, double lon, uint64_t utc_sec)
             lon_text,
             lon_dir);
     checksum = nmea_checksum(body);
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+    char gga[128];
+    int gga_len = snprintf(gga, sizeof(gga), "$%s*%02X\r\n", body, checksum);
+    if (gga_len > 0 && gga_len < (int)sizeof(gga))
+    {
+        GM800_SdpSend(GM800_SOCKET_A_NTRIP, (const uint8_t *)gga, (uint16_t)gga_len);
+    }
+#else
     USRMoudle_uart_printf("$%s*%02X\r\n", body, checksum);
+#endif
     usr_debug_print("DBG: ntrip gga sent\r\n");
 
     /*

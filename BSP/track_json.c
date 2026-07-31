@@ -2,6 +2,7 @@
 #include "cJSON.h"
 #include "stdlib.h"
 #include "usart_4gmoudle.h"
+#include "mqtt_client.h"
 #include "stdint.h"
 #include "stdbool.h"
 #include "track_queue.h"
@@ -36,6 +37,33 @@ void sendData(cJSON *cjson, char *type)
 {
     uint8_t sendNum = 0;
     char *jsonString = cJSON_Print(cjson);
+
+    if (jsonString == NULL)
+    {
+        cJSON_Delete(cjson);
+        return;
+    }
+
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+    char topic[64];
+    if (strcmp(type, "/Job/Ready") == 0)
+    {
+        strcpy(topic, "/Job");
+    }
+    else
+    {
+        snprintf(topic, sizeof(topic), "/Job/%s/4G", sn);
+    }
+    if (strcmp(type, "/Job/Track") == 0)
+    {
+        printf("send track\r\n");
+    }
+    printf("MQTT: sendData topic=%s json_len=%u\r\n", topic, (unsigned int)strlen(jsonString));
+    MqttClient_Publish(topic, (const uint8_t *)jsonString, (uint16_t)strlen(jsonString));
+    cJSON_Delete(cjson);
+    vPortFree(jsonString);
+    return;
+#endif
 
     char *buffer = pvPortMalloc(strlen("1,") + strlen(jsonString) + 5);
 
@@ -480,5 +508,3 @@ void taskid_initonce_fromgnss(void)
     uint64_t utc = gnss_get_utc_seconds();//todo read from mavlink gps utc 
     g_task_id = generate_task_id_from_utc(utc);
 }
-
-

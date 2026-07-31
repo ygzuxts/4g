@@ -38,6 +38,7 @@
 #include "rtcm_parse.h"
 #include "bsp_led.h"
 #include "bsp_can.h"
+#include "mqtt_client.h"
 #include "usart_mavlink.h"
 /* FatFs includes component */
 #include "ff.h"
@@ -379,6 +380,81 @@ static void process_ntrip_stream(uint8_t *buffer, uint16_t length)
 
     feed_ntrip_rtcm(buffer, length);
 }
+
+static void process_gm800_sdp_stream(uint8_t *buffer, uint16_t length)
+{
+    uint16_t pos = 0;
+
+    while ((uint16_t)(length - pos) >= 8U)
+    {
+        if (buffer[pos] != 0xAA || buffer[pos + 1U] != 0xFD || buffer[pos + 2U] != 0x55)
+        {
+            pos++;
+            continue;
+        }
+
+        uint16_t payload_len = ((uint16_t)buffer[pos + 3U] << 8) | buffer[pos + 4U];
+        uint16_t frame_len = (uint16_t)(3U + 2U + payload_len + 1U);
+        if (payload_len < 2U || frame_len > (uint16_t)(length - pos))
+        {
+            return;
+        }
+
+        uint8_t checksum = 0;
+        for (uint16_t i = 0; i < payload_len; i++)
+        {
+            checksum = (uint8_t)(checksum + buffer[pos + 5U + i]);
+        }
+        if (checksum != buffer[pos + 5U + payload_len])
+        {
+            ntrip_debug_print("DBG: gm800 sdp checksum error\r\n");
+            pos++;
+            continue;
+        }
+
+        uint8_t socket = buffer[pos + 5U];
+        uint8_t reserve = buffer[pos + 6U];
+        uint8_t *data = &buffer[pos + 7U];
+        uint16_t data_len = (uint16_t)(payload_len - 2U);
+
+        if (reserve == 0x00 && socket == GM800_SOCKET_A_NTRIP)
+        {
+            ntrip_debug_print("DBG: gm800 sdp route=socket A ntrip\r\n");
+            process_ntrip_stream(data, data_len);
+        }
+        else if (reserve == 0x00 && socket == GM800_SOCKET_B_MQTT)
+        {
+            ntrip_debug_print("DBG: gm800 sdp route=socket B mqtt\r\n");
+            char mqtt_hex[160];
+            int used = snprintf(mqtt_hex,
+                                sizeof(mqtt_hex),
+                                "DBG: socket B mqtt data len=%u hex=",
+                                (unsigned int)data_len);
+            uint16_t dump_len = (data_len > 24U) ? 24U : data_len;
+            for (uint16_t i = 0; i < dump_len && used < (int)(sizeof(mqtt_hex) - 4); i++)
+            {
+                used += snprintf(&mqtt_hex[used], sizeof(mqtt_hex) - used, "%02X ", data[i]);
+            }
+            snprintf(&mqtt_hex[used], sizeof(mqtt_hex) - used, "\r\n");
+            ntrip_debug_print(mqtt_hex);
+            MqttClient_Input(data, data_len);
+        }
+        else
+        {
+            char sdp_debug[96];
+            snprintf(sdp_debug,
+                     sizeof(sdp_debug),
+                     "DBG: gm800 sdp module/unknown socket=%02X reserve=%02X len=%u data0=%02X\r\n",
+                     socket,
+                     reserve,
+                     (unsigned int)data_len,
+                     (data_len > 0U) ? data[0] : 0U);
+            ntrip_debug_print(sdp_debug);
+        }
+
+        pos = (uint16_t)(pos + frame_len);
+    }
+}
 /* USER CODE END FunctionPrototypes */
 
 void StartTrackRecodeTask(void const *argument);
@@ -614,6 +690,7 @@ void StartJsonParseTask(void const *argument)
     while (1)
     {
         BSP_CAN_DebugHeartbeat();
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP) || (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
 #if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_NTRIP)
         if (Ntrip_TakeRemoteConfigApplyRequest())
         {
@@ -653,6 +730,7 @@ void StartJsonParseTask(void const *argument)
                 USART2_ReportWarning("4G config: apply failed");
             }
         }
+#endif
 
         if (ntrip_runtime_active &&
             !ntrip_handshake_accepted &&
@@ -672,6 +750,9 @@ void StartJsonParseTask(void const *argument)
             lastGgaTime = getSysTickCnt();
             Ntrip_SendGGA(pTrackInfo.lat, pTrackInfo.lon, pTrackInfo.utc_sec);
         }
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+        MqttClient_Poll(getSysTickCnt());
+#endif
 #endif
 
         if (RecieveFinishFlag == true)
@@ -686,6 +767,13 @@ void StartJsonParseTask(void const *argument)
                      (ucRxCnt > 2) ? RxBuffer[2] : 0);
             ntrip_debug_print(debug_buf);
 
+#if (USR_MODULE_WORK_MODE == USR_MODULE_MODE_DUAL_TCP)
+            if (ucRxCnt >= 3 && RxBuffer[0] == 0xAA && RxBuffer[1] == 0xFD && RxBuffer[2] == 0x55)
+            {
+                process_gm800_sdp_stream(RxBuffer, ucRxCnt);
+            }
+            else
+#endif
             if (ucRxCnt >= 2 && RxBuffer[0] == 0x31 && RxBuffer[1] == 0x2C)
             {
                 ntrip_debug_print("DBG: 4g rx route=json topic 1\r\n");

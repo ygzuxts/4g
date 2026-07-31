@@ -60,6 +60,8 @@ C_SOURCES := \
   Core/Src/stm32f4xx_hal_timebase_tim.c \
   Core/Src/gcc_syscalls.c \
   BSP/cJSON.c \
+  BSP/gm800_sdp.c \
+  BSP/mqtt_client.c \
   BSP/usart_4gmoudle.c \
   BSP/usart_debug.c \
   BSP/usart_mavlink.c \

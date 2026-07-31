@@ -4,14 +4,15 @@
 #include "stm32f4xx.h"
 #include <stdbool.h>
 
-#define USR_MODULE_MODE_MQTT  0
-#define USR_MODULE_MODE_NTRIP 1
+#define USR_MODULE_MODE_MQTT     0
+#define USR_MODULE_MODE_NTRIP    1
+#define USR_MODULE_MODE_DUAL_TCP 2
 
 /*
  * 默认保持原来的 MQTT 云平台模式。
  * 如果只想验证 4G 模块直连 NTRIP，把下面这一行改成 USR_MODULE_MODE_NTRIP。
  */
-#define USR_MODULE_WORK_MODE USR_MODULE_MODE_NTRIP
+#define USR_MODULE_WORK_MODE USR_MODULE_MODE_DUAL_TCP
 
 /*
  * NTRIP configuration source. Only change NTRIP_CONFIG_SOURCE:
@@ -51,7 +52,13 @@
 extern UART_HandleTypeDef huart1;
 extern bool usrMoudleInintSuccess;
 
+typedef enum {
+    GM800_SOCKET_A_NTRIP = 0x61,
+    GM800_SOCKET_B_MQTT = 0x62,
+} GM800_Socket;
+
 void USART1_SendBytes(uint8_t *buf, uint16_t len);
+void GM800_SdpSend(GM800_Socket socket, const uint8_t *data, uint16_t len);
 void MX_USART1_UART_Init(void);
 uint8_t usrMoudle_Clear(void);
 uint8_t usrMoudle_Init(void);
