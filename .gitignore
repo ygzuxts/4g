@@ -1,2 +1,11 @@
 Output/
 MDK-ARM/.vscode
+output/
+build/
+build.log
+.venv-rtcm/
+.vscode/
+tools/__pycache__/
+MDK-ARM/1
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.before-*
