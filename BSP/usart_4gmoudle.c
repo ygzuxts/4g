@@ -29,10 +29,10 @@ static struct
 } uart_rx_frame = {0};                                    // USRMoudle UART接收帧缓冲信�?结构�?
 static uint8_t uart_tx_buf[ATK_MW8266D_UART_TX_BUF_SIZE]; // USRMoudle UART发送缓�?
 
-#define NTRIP_DEFAULT_HOST "pnt.true-point.com"
-#define NTRIP_DEFAULT_PORT 8103
-#define NTRIP_DEFAULT_MOUNT_POINT "RTCM33GRCEJ"
-#define NTRIP_DEFAULT_AUTH_BASIC "Y2F6ZDI3NDE6ZnV0dXJld2luZw=="
+#define NTRIP_DEFAULT_HOST "103.143.19.54"
+#define NTRIP_DEFAULT_PORT 8003
+#define NTRIP_DEFAULT_MOUNT_POINT "RTCM33GRCEJpro"
+#define NTRIP_DEFAULT_AUTH_BASIC "eG5ueTU2MjMzOjQyOTc0"
 #define MQTT_DEFAULT_HOST "47.112.204.68"
 #define MQTT_DEFAULT_PORT 1883
 
@@ -618,7 +618,19 @@ void Ntrip_SendRequest(void)
                        (ntrip_config.auth_basic[0] != '\0') ? "\r\n" : "");
     if (len > 0 && len < (int)sizeof(request))
     {
+        char debug_buf[120];
+        snprintf(debug_buf,
+                 sizeof(debug_buf),
+                 "DBG: ntrip GET send socket=A len=%u mount=%s auth=%s\r\n",
+                 (unsigned int)len,
+                 ntrip_config.mountpoint,
+                 (ntrip_config.auth_basic[0] != '\0') ? "set" : "none");
+        usr_debug_print(debug_buf);
         GM800_SdpSend(GM800_SOCKET_A_NTRIP, (const uint8_t *)request, (uint16_t)len);
+    }
+    else
+    {
+        usr_debug_print("DBG: ntrip GET build failed or too long\r\n");
     }
 #else
     USRMoudle_uart_printf("GET /%s HTTP/1.1\r\n", ntrip_config.mountpoint);
@@ -697,6 +709,17 @@ void Ntrip_SendGGA(double lat, double lon, uint64_t utc_sec)
     int gga_len = snprintf(gga, sizeof(gga), "$%s*%02X\r\n", body, checksum);
     if (gga_len > 0 && gga_len < (int)sizeof(gga))
     {
+        {
+            char debug_buf[160];
+            snprintf(debug_buf,
+                     sizeof(debug_buf),
+                     "DBG: ntrip GGA send socket=A len=%d lat=%.7f lon=%.7f utc=%lu\r\n",
+                     gga_len,
+                     lat,
+                     lon,
+                     (unsigned long)utc_sec);
+            usr_debug_print(debug_buf);
+        }
         GM800_SdpSend(GM800_SOCKET_A_NTRIP, (const uint8_t *)gga, (uint16_t)gga_len);
     }
 #else

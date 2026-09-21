@@ -51,6 +51,13 @@ extern uint8_t mavlink_uart_rx_buf[MAVLINK_UART_RX_BUFFER_SIZE];
 extern TrackInfo pTrackInfo;
 extern uint32_t ucRxCnt;
 extern uint8_t RxBuffer[1500];
+extern char flynum[6];
+extern volatile uint32_t mavlink_rx_fe_count;
+extern volatile uint32_t mavlink_rx_fd_count;
+extern volatile uint32_t mavlink_rx_ore_count;
+extern volatile uint32_t mavlink_rx_ne_count;
+extern volatile uint32_t mavlink_rx_fe_err_count;
+extern volatile uint32_t mavlink_rx_fifo_full_count;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -127,6 +134,7 @@ int main(void)
     MX_USART3_UART_Init();
     Led_init();
     DBG_BOTH("DBG: uart2/usart3 boot probe\r\n");
+    DBG_BOTH("DBG: USART2 FC port PA2=TX PA3=RX baud=115200 8N1 flow=none text_debug=0\r\n");
     if (BSP_CAN1_Init() == HAL_OK)
     {
 #if (BSP_CAN1_PINMAP == BSP_CAN1_PINMAP_PB8_PB9)
@@ -172,11 +180,25 @@ int main(void)
 #endif
 #if DEBUG_BYPASS_MAVLINK_WAIT
     strcpy(sn, "123456789");
+    strcpy(flynum, "0");
     pTrackInfo.utc_sec = 1759127916;
-    DBG_BOTH("DBG: bypass mavlink sn/time wait for 4g test\r\n");
+    pTrackInfo.lat = 39.908823;
+    pTrackInfo.lon = 116.397470;
+    pTrackInfo.alt = 50.0f;
+    pTrackInfo.pitch = 0.0f;
+    pTrackInfo.roll = 0.0f;
+    pTrackInfo.yaw = 0.0f;
+    pTrackInfo.armed = false;
+    pTrackInfo.ready_to_fly = true;
+    pTrackInfo.vehicle_q[0] = 1.0f;
+    pTrackInfo.vehicle_q[1] = 0.0f;
+    pTrackInfo.vehicle_q[2] = 0.0f;
+    pTrackInfo.vehicle_q[3] = 0.0f;
+    DBG_BOTH("DBG: bypass mavlink enabled\r\n");
+    DBG_BOTH("DBG: fixed sn=123456789 utc=1759127916 lat=39.908823 lon=116.397470\r\n");
 #else
     uint32_t wait_mavlink_cnt = 0;
-    char wait_debug[128];
+    char wait_debug[220];
     DBG_BOTH("DBG: after 2s delay, waiting mavlink sn/time\r\n");
     USART2_ReportInfo("NTRIP: waiting FC serial/time");
     while (sn[0] == 0 || pTrackInfo.utc_sec < 1609459200ULL)
@@ -188,13 +210,37 @@ int main(void)
             wait_mavlink_cnt = 0;
             snprintf(wait_debug,
                      sizeof(wait_debug),
-                     "DBG: mavlink wait bytes=%lu msgs=%lu fifo=%u sn=%s utc=%lu\r\n",
+                     "DBG: mavlink wait bytes=%lu msgs=%lu fifo=%u fe=%lu fd=%lu ore=%lu ne=%lu ferr=%lu full=%lu sn=%s utc=%lu\r\n",
                      (unsigned long)mavlink_rx_byte_count,
                      (unsigned long)mavlink_rx_message_count,
                      (unsigned int)serial_available(&mavlink_uart_rx_fifo),
+                     (unsigned long)mavlink_rx_fe_count,
+                     (unsigned long)mavlink_rx_fd_count,
+                     (unsigned long)mavlink_rx_ore_count,
+                     (unsigned long)mavlink_rx_ne_count,
+                     (unsigned long)mavlink_rx_fe_err_count,
+                     (unsigned long)mavlink_rx_fifo_full_count,
                      (sn[0] != 0) ? "ok" : "missing",
                      (unsigned long)pTrackInfo.utc_sec);
             DBG_BOTH(wait_debug);
+            {
+                uint8_t sample[16];
+                uint8_t sample_len = mavlink_rx_copy_sample(sample, sizeof(sample));
+                char hex_debug[96];
+                int pos = snprintf(hex_debug,
+                                   sizeof(hex_debug),
+                                   "DBG: mavlink rx sample len=%u hex=",
+                                   (unsigned int)sample_len);
+                for (uint8_t i = 0; i < sample_len && pos < (int)(sizeof(hex_debug) - 4); i++)
+                {
+                    pos += snprintf(&hex_debug[pos],
+                                    sizeof(hex_debug) - (uint32_t)pos,
+                                    "%02X ",
+                                    sample[i]);
+                }
+                snprintf(&hex_debug[pos], sizeof(hex_debug) - (uint32_t)pos, "\r\n");
+                DBG_BOTH(hex_debug);
+            }
             USART2_ReportWarning("NTRIP: still waiting FC serial/time");
         }
         HAL_Delay(10);

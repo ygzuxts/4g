@@ -15,6 +15,8 @@
 #define MQTT_KEEPALIVE_SEC 60U
 #define MQTT_MAX_PACKET 2048U
 #define MQTT_RECONNECT_MS 5000U
+#define MQTT_DEBUG_PUBLISH 0
+#define MQTT_DEBUG_RX_VERBOSE 0
 
 extern char sn[20];
 
@@ -123,6 +125,7 @@ void MqttClient_Publish(const char *topic, const uint8_t *payload, uint16_t payl
     uint16_t p = 0;
     char debug[128];
 
+#if MQTT_DEBUG_PUBLISH
     snprintf(debug,
              sizeof(debug),
              "MQTT: PUBLISH request connected=%u topic=%s payload_len=%u remaining=%lu\r\n",
@@ -132,6 +135,8 @@ void MqttClient_Publish(const char *topic, const uint8_t *payload, uint16_t payl
              (unsigned long)remaining_len);
     printf("%s", debug);
     USART2_SendDebugText(debug);
+
+#endif
 
     if (!mqtt_connected || remaining_len + 5U > MQTT_MAX_PACKET)
     {
@@ -145,6 +150,7 @@ void MqttClient_Publish(const char *topic, const uint8_t *payload, uint16_t payl
     p += put_string(&packet[p], topic);
     memcpy(&packet[p], payload, payload_len);
     p += payload_len;
+#if MQTT_DEBUG_PUBLISH
     snprintf(debug,
              sizeof(debug),
              "MQTT: PUBLISH send topic=%s packet_len=%u\r\n",
@@ -152,6 +158,7 @@ void MqttClient_Publish(const char *topic, const uint8_t *payload, uint16_t payl
              (unsigned int)p);
     printf("%s", debug);
     USART2_SendDebugText(debug);
+#endif
     mqtt_send_packet(packet, p);
 }
 

@@ -9,6 +9,14 @@
 fifo_t mavlink_uart_rx_fifo;
 uint8_t mavlink_uart_rx_buf[MAVLINK_UART_RX_BUFFER_SIZE];
 volatile uint32_t mavlink_rx_byte_count = 0;
+volatile uint8_t mavlink_rx_sample_buf[16];
+volatile uint8_t mavlink_rx_sample_len = 0;
+volatile uint32_t mavlink_rx_fe_count = 0;
+volatile uint32_t mavlink_rx_fd_count = 0;
+volatile uint32_t mavlink_rx_ore_count = 0;
+volatile uint32_t mavlink_rx_ne_count = 0;
+volatile uint32_t mavlink_rx_fe_err_count = 0;
+volatile uint32_t mavlink_rx_fifo_full_count = 0;
 /** @brief 读FIFO
  * @param fifo 待读缓冲区
  *        *ch   读到的数据
@@ -108,13 +116,66 @@ uint16_t serial_available(fifo_t *fifo)
 void USART2_IRQHandler(void)
 {
     uint8_t c;
-    if ((__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE) != RESET)) // 接收中断
+
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_ORE) != RESET)
+    {
+        mavlink_rx_ore_count++;
+        __HAL_UART_CLEAR_OREFLAG(&huart2);
+    }
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_NE) != RESET)
+    {
+        mavlink_rx_ne_count++;
+        __HAL_UART_CLEAR_NEFLAG(&huart2);
+    }
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_FE) != RESET)
+    {
+        mavlink_rx_fe_err_count++;
+        __HAL_UART_CLEAR_FEFLAG(&huart2);
+    }
+
+    if ((__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE) != RESET))
     {
         HAL_UART_Receive(&huart2, &c, 1, 1000);
-        fifo_write_ch(&mavlink_uart_rx_fifo, c);
+        if (c == 0xFE)
+        {
+            mavlink_rx_fe_count++;
+        }
+        else if (c == 0xFD)
+        {
+            mavlink_rx_fd_count++;
+        }
+
+        if (mavlink_rx_sample_len < sizeof(mavlink_rx_sample_buf))
+        {
+            mavlink_rx_sample_buf[mavlink_rx_sample_len++] = c;
+        }
+        if (!fifo_write_ch(&mavlink_uart_rx_fifo, c))
+        {
+            mavlink_rx_fifo_full_count++;
+        }
         mavlink_rx_byte_count++;
     }
 }
 
+
+uint8_t mavlink_rx_copy_sample(uint8_t *out, uint8_t max_len)
+{
+    uint8_t len;
+
+    __disable_irq();
+    len = mavlink_rx_sample_len;
+    if (len > max_len)
+    {
+        len = max_len;
+    }
+    for (uint8_t i = 0; i < len; i++)
+    {
+        out[i] = mavlink_rx_sample_buf[i];
+    }
+    mavlink_rx_sample_len = 0;
+    __enable_irq();
+
+    return len;
+}
 
 

@@ -1,4 +1,8 @@
 #include "track_json.h"
+#define TRACK_JSON_DEBUG_MQTT_SEND 0
+#define TRACK_JSON_DEBUG_FLOW 0
+#define TASK_START_GUARD_MS 15000UL
+#define TASK_START_REQUIRE_UTC 1
 #include "cJSON.h"
 #include "stdlib.h"
 #include "usart_4gmoudle.h"
@@ -11,6 +15,7 @@
 #include "bsp_led.h"
 #include "bsp_Flash.h"
 extern uint64_t getTaskExecutionCnt(void);
+extern uint32_t getSysTickCnt(void);
 
 extern char sn[20];
 extern char flynum[6]; // 起降次数
@@ -56,9 +61,13 @@ void sendData(cJSON *cjson, char *type)
     }
     if (strcmp(type, "/Job/Track") == 0)
     {
+#if TRACK_JSON_DEBUG_FLOW
         printf("send track\r\n");
+#endif
     }
+#if TRACK_JSON_DEBUG_MQTT_SEND
     printf("MQTT: sendData topic=%s json_len=%u\r\n", topic, (unsigned int)strlen(jsonString));
+#endif
     MqttClient_Publish(topic, (const uint8_t *)jsonString, (uint16_t)strlen(jsonString));
     cJSON_Delete(cjson);
     vPortFree(jsonString);
@@ -87,7 +96,9 @@ void sendData(cJSON *cjson, char *type)
     {
 //        while (tag_flag)
 //        {
-            printf("send track\r\n");
+    #if TRACK_JSON_DEBUG_FLOW
+        printf("send track\r\n");
+#endif
             USART1_SendBytes((uint8_t *)buffer, strlen(buffer) + 1);
 //            if (sendNum++ >= 1) // 防止和RTCM报文冲突
 //            {
@@ -362,8 +373,34 @@ void startTask(void)
 
 void taskAction(void)
 {
+    static uint32_t last_guard_debug_ms = 0;
+
     if (SendTaskStateFlag == true && taskflag == true)
     {
+        uint32_t now_ms = getSysTickCnt();
+        bool startup_ready = (now_ms >= TASK_START_GUARD_MS);
+        bool mqtt_ready = (MqttClient_IsConnected() != 0U);
+        bool sn_ready = (sn[0] != '\0');
+#if TASK_START_REQUIRE_UTC
+        bool utc_ready = (pTrackInfo.utc_sec >= 1609459200ULL);
+#else
+        bool utc_ready = true;
+#endif
+
+        if (!startup_ready || !mqtt_ready || !sn_ready || !utc_ready)
+        {
+            if ((now_ms - last_guard_debug_ms) >= 1000UL)
+            {
+                last_guard_debug_ms = now_ms;
+                printf("DBG: start guard wait uptime=%lu mqtt=%u sn=%u utc=%lu\r\n",
+                       (unsigned long)now_ms,
+                       mqtt_ready ? 1U : 0U,
+                       sn_ready ? 1U : 0U,
+                       (unsigned long)pTrackInfo.utc_sec);
+            }
+            return;
+        }
+
         SendTaskStateFlag = false;
 			
 				if(pTrackInfo.armed == true){
@@ -371,15 +408,18 @@ void taskAction(void)
 					Flash_write(pTrackInfo.day_job_id);
 				}
 
-        //while (jobid_ready == 0 && taskflag == true) // 获取任务ID
-//				while (taskflag == true) // 获取任务ID
+        //while (jobid_ready == 0 && taskflag == true) // èŽ·å–ä»»åŠ¡ID
+//				while (taskflag == true) // èŽ·å–ä»»åŠ¡ID
 //        {
-            startTask(); // 发送开始作业
+            startTask(); // å‘é€å¼€å§‹ä½œä¸š
+#if TRACK_JSON_DEBUG_FLOW
             printf("startTask\r\n");
+#endif
             osDelay(2000);
 //        }
     }
 }
+
 
 void json_prarse(cJSON *cjson)
 {

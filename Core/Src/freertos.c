@@ -40,6 +40,7 @@
 #include "bsp_can.h"
 #include "mqtt_client.h"
 #include "usart_mavlink.h"
+#include "mavlink_usart_fifo.h"
 /* FatFs includes component */
 #include "ff.h"
 #include "ff_gen_drv.h"
@@ -76,7 +77,14 @@ extern char token[10];
 extern char sn[20];
 extern char cv[10];    // 固件版本
 extern char fv[10];    // 飞控版本
-extern char flynum[6]; // 起降次数
+extern char flynum[6];
+extern volatile uint32_t mavlink_rx_message_count;
+extern volatile uint32_t mavlink_rx_fe_count;
+extern volatile uint32_t mavlink_rx_fd_count;
+extern volatile uint32_t mavlink_rx_ore_count;
+extern volatile uint32_t mavlink_rx_ne_count;
+extern volatile uint32_t mavlink_rx_fe_err_count;
+extern volatile uint32_t mavlink_rx_fifo_full_count; // 起降次数
 
 extern char SDPath[4];     /* SD逻辑驱动器路径 */
 extern FATFS fs;           /* FatFs文件系统对象 */
@@ -106,6 +114,8 @@ osMutexId gRtcMutexHandle;
 #define BIT_Task03_EVENT (EventBits_t)(0x0001 << 2)
 #define BIT_Task04_EVENT (EventBits_t)(0x0001 << 3)
 #define BIT_TaskAll_EVENT BIT_Task01_EVENT | BIT_Task02_EVENT | BIT_Task03_EVENT | BIT_Task04_EVENT
+#define APP_FLOW_DEBUG 0
+#define CLOUD_READY_WAIT_DEBUG 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -174,6 +184,39 @@ static void ntrip_debug_print(const char *text)
     USART2_SendDebugText(text);
 }
 
+
+static void ntrip_debug_dump_hex(const char *prefix, const uint8_t *data, uint16_t length, uint16_t max_dump)
+{
+    char debug_buf[220];
+    int used;
+    uint16_t dump_len;
+
+    if (data == NULL)
+    {
+        return;
+    }
+
+    dump_len = (length > max_dump) ? max_dump : length;
+    used = snprintf(debug_buf,
+                    sizeof(debug_buf),
+                    "%s len=%u hex=",
+                    prefix,
+                    (unsigned int)length);
+
+    for (uint16_t i = 0; i < dump_len && used < (int)(sizeof(debug_buf) - 6); i++)
+    {
+        used += snprintf(&debug_buf[used], sizeof(debug_buf) - (uint32_t)used, "%02X ", data[i]);
+    }
+
+    if (length > dump_len && used < (int)(sizeof(debug_buf) - 8))
+    {
+        used += snprintf(&debug_buf[used], sizeof(debug_buf) - (uint32_t)used, "...");
+    }
+
+    snprintf(&debug_buf[used], sizeof(debug_buf) - (uint32_t)used, "\r\n");
+    ntrip_debug_print(debug_buf);
+}
+
 #define NTRIP_HANDSHAKE_RETRY_MS 5000U
 
 static bool ntrip_header_done = false;
@@ -182,6 +225,9 @@ static uint8_t ntrip_header_cache[256];
 static uint16_t ntrip_header_cache_len = 0;
 static uint8_t ntrip_rtcm_cache[1500];
 static uint16_t ntrip_rtcm_cache_len = 0;
+static uint32_t ntrip_rx_total_bytes = 0;
+static uint32_t ntrip_rtcm_feed_total_bytes = 0;
+static uint32_t ntrip_rtcm_frame_count = 0;
 
 static void reset_ntrip_stream_state(void)
 {
@@ -189,6 +235,9 @@ static void reset_ntrip_stream_state(void)
     ntrip_handshake_accepted = false;
     ntrip_header_cache_len = 0;
     ntrip_rtcm_cache_len = 0;
+    ntrip_rx_total_bytes = 0;
+    ntrip_rtcm_feed_total_bytes = 0;
+    ntrip_rtcm_frame_count = 0;
     memset(ntrip_header_cache, 0, sizeof(ntrip_header_cache));
     memset(ntrip_rtcm_cache, 0, sizeof(ntrip_rtcm_cache));
 }
@@ -243,6 +292,19 @@ static void feed_ntrip_rtcm(const uint8_t *data, uint16_t length)
         return;
     }
 
+    ntrip_rtcm_feed_total_bytes += length;
+    {
+        char debug_buf[120];
+        snprintf(debug_buf,
+                 sizeof(debug_buf),
+                 "DBG: ntrip rtcm feed len=%u total=%lu cache_before=%u\r\n",
+                 (unsigned int)length,
+                 (unsigned long)ntrip_rtcm_feed_total_bytes,
+                 (unsigned int)ntrip_rtcm_cache_len);
+        ntrip_debug_print(debug_buf);
+    }
+    ntrip_debug_dump_hex("DBG: ntrip rtcm feed sample", data, length, 32U);
+
     if (length > sizeof(ntrip_rtcm_cache) - ntrip_rtcm_cache_len)
     {
         ntrip_debug_print("DBG: rtcm cache overflow, reset\r\n");
@@ -293,9 +355,29 @@ static void feed_ntrip_rtcm(const uint8_t *data, uint16_t length)
 
         if (ntrip_rtcm_cache_len < total_length)
         {
+            char debug_buf[120];
+            snprintf(debug_buf,
+                     sizeof(debug_buf),
+                     "DBG: ntrip rtcm waiting frame need=%u have=%u payload=%u\r\n",
+                     (unsigned int)total_length,
+                     (unsigned int)ntrip_rtcm_cache_len,
+                     (unsigned int)payload_length);
+            ntrip_debug_print(debug_buf);
             return;
         }
 
+        ntrip_rtcm_frame_count++;
+        {
+            char debug_buf[120];
+            snprintf(debug_buf,
+                     sizeof(debug_buf),
+                     "DBG: ntrip rtcm complete frame #%lu total_len=%u payload=%u cache=%u\r\n",
+                     (unsigned long)ntrip_rtcm_frame_count,
+                     (unsigned int)total_length,
+                     (unsigned int)payload_length,
+                     (unsigned int)ntrip_rtcm_cache_len);
+            ntrip_debug_print(debug_buf);
+        }
         process_rtcm_data(ntrip_rtcm_cache, total_length);
 
         if (ntrip_rtcm_cache_len > total_length)
@@ -316,6 +398,20 @@ static void process_ntrip_stream(uint8_t *buffer, uint16_t length)
     {
         return;
     }
+
+    ntrip_rx_total_bytes += length;
+    {
+        char debug_buf[120];
+        snprintf(debug_buf,
+                 sizeof(debug_buf),
+                 "DBG: ntrip stream rx len=%u total=%lu header_done=%u accepted=%u\r\n",
+                 (unsigned int)length,
+                 (unsigned long)ntrip_rx_total_bytes,
+                 (unsigned int)ntrip_header_done,
+                 (unsigned int)ntrip_handshake_accepted);
+        ntrip_debug_print(debug_buf);
+    }
+    ntrip_debug_dump_hex("DBG: ntrip stream sample", buffer, length, 32U);
 
     if (!ntrip_header_done)
     {
@@ -420,23 +516,11 @@ static void process_gm800_sdp_stream(uint8_t *buffer, uint16_t length)
         if (reserve == 0x00 && socket == GM800_SOCKET_A_NTRIP)
         {
             ntrip_debug_print("DBG: gm800 sdp route=socket A ntrip\r\n");
+            ntrip_debug_dump_hex("DBG: socket A ntrip data", data, data_len, 32U);
             process_ntrip_stream(data, data_len);
         }
         else if (reserve == 0x00 && socket == GM800_SOCKET_B_MQTT)
         {
-            ntrip_debug_print("DBG: gm800 sdp route=socket B mqtt\r\n");
-            char mqtt_hex[160];
-            int used = snprintf(mqtt_hex,
-                                sizeof(mqtt_hex),
-                                "DBG: socket B mqtt data len=%u hex=",
-                                (unsigned int)data_len);
-            uint16_t dump_len = (data_len > 24U) ? 24U : data_len;
-            for (uint16_t i = 0; i < dump_len && used < (int)(sizeof(mqtt_hex) - 4); i++)
-            {
-                used += snprintf(&mqtt_hex[used], sizeof(mqtt_hex) - used, "%02X ", data[i]);
-            }
-            snprintf(&mqtt_hex[used], sizeof(mqtt_hex) - used, "\r\n");
-            ntrip_debug_print(mqtt_hex);
             MqttClient_Input(data, data_len);
         }
         else
@@ -582,13 +666,25 @@ void StartTrackSendTask(void const *argument)
     /* Infinite loop */
 		id = 777;
 		timestamp = 1759127916;
-    while ((id == 0 || timestamp == 0)) // 获取任务ID和云网时间戳
+    while ((id == 0 || timestamp == 0))
     {
+#if APP_FLOW_DEBUG
         printf("send ready task\r\n");
-        readyTask(); // 发送准备作业
+#endif
+        if (MqttClient_IsConnected())
+        {
+            readyTask();
+        }
         osDelay(5000);
     }
-		readyTask(); // 发送准备作业
+    while (!MqttClient_IsConnected())
+    {
+#if CLOUD_READY_WAIT_DEBUG
+        printf("DBG: cloud ready wait mqtt connected\r\n");
+#endif
+        osDelay(1000);
+    }
+		readyTask();
     SetLEDState(1, 2);
     while (1)
     {
@@ -620,13 +716,17 @@ void StartTrackSendTask(void const *argument)
 				//taskflag = false;//for finish info test
         if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) >= 5) //
         {
+#if APP_FLOW_DEBUG
             printf("send heap track\r\n");
+#endif
             uploadTrack();
         }
         else if (SendTaskStateFlag == true && taskflag == false && getLinkedListLength(&pTrackList) < 5)
 				//else if (taskflag == false )//for finish info test
         {
+#if APP_FLOW_DEBUG
             printf("send task finish\r\n");
+#endif
             SendTaskStateFlag = false;
             finishTask();
             osDelay(2000);
@@ -664,9 +764,43 @@ void StartMavlinkParseTask(void const *argument)
     /* USER CODE BEGIN StartMavlinkParseTask */
     /* Infinite loop */
     uint32_t lastWakeTime = getSysTickCnt();
+    uint32_t selftest_cnt = 0;
     while (1)
     {
         update();
+#if USART2_TEXT_DEBUG_ONLY
+        if (++selftest_cnt >= 200U)
+        {
+            uint8_t sample[16];
+            uint8_t sample_len;
+            char selftest_debug[220];
+            int pos;
+
+            selftest_cnt = 0;
+            sample_len = mavlink_rx_copy_sample(sample, sizeof(sample));
+            pos = snprintf(selftest_debug,
+                           sizeof(selftest_debug),
+                           "DBG: usart2 selftest bytes=%lu msgs=%lu fifo=%u fe=%lu fd=%lu ore=%lu ne=%lu ferr=%lu full=%lu hex=",
+                           (unsigned long)mavlink_rx_byte_count,
+                           (unsigned long)mavlink_rx_message_count,
+                           (unsigned int)serial_available(&mavlink_uart_rx_fifo),
+                           (unsigned long)mavlink_rx_fe_count,
+                           (unsigned long)mavlink_rx_fd_count,
+                           (unsigned long)mavlink_rx_ore_count,
+                           (unsigned long)mavlink_rx_ne_count,
+                           (unsigned long)mavlink_rx_fe_err_count,
+                           (unsigned long)mavlink_rx_fifo_full_count);
+            for (uint8_t i = 0; i < sample_len && pos < (int)(sizeof(selftest_debug) - 4); i++)
+            {
+                pos += snprintf(&selftest_debug[pos],
+                                sizeof(selftest_debug) - (uint32_t)pos,
+                                "%02X ",
+                                sample[i]);
+            }
+            snprintf(&selftest_debug[pos], sizeof(selftest_debug) - (uint32_t)pos, "\r\n");
+            USART2_SendDebugText(selftest_debug);
+        }
+#endif
         vTaskDelayUntil(&lastWakeTime, F2T(RATE_200_HZ));
     }
     /* USER CODE END StartMavlinkParseTask */

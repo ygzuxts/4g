@@ -471,11 +471,6 @@
               <FilePath>..\BSP\bsp_led.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_can.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\BSP\bsp_can.c</FilePath>
-            </File>
-            <File>
               <FileName>bsp_Flash.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_Flash.c</FilePath>
@@ -489,6 +484,11 @@
               <FileName>mqtt_client.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\mqtt_client.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\bsp_can.c</FilePath>
             </File>
           </Files>
         </Group>

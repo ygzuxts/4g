@@ -59,11 +59,15 @@ void USART2_SendBytes(uint8_t *buf, uint16_t len)
 void USART2_SendDebugText(const char *text)
 {
 #if USART2_TEXT_DEBUG_ONLY
-    HAL_UART_Transmit(&huart2, (uint8_t *)text, strlen(text), 1000);
+    if (text != NULL)
+    {
+        HAL_UART_Transmit(&huart2, (uint8_t *)text, strlen(text), 1000);
+    }
 #else
     (void)text;
 #endif
 }
+
 
 static void USART2_SendStatusText(uint8_t severity, const char *text)
 {
